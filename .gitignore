@@ -1,0 +1,10 @@
+*.wav
+*.mp3
+*.mp4
+*.npz
+*.musicxml
+*.mid
+.idea/*
+*.pyc
+*.reapeaks
+__pycache__/*
