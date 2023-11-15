@@ -2,6 +2,8 @@
 // Step 2: click anywhere in the text below and press command-enter to run
 // Step 3: Go back to python and run the corresponding scamp code
 
+NetAddr.langPort
+
 (
 s.waitForBoot({
 	// Load all the recordings into ~recordings, interleaved as template, data, template data, etc.
