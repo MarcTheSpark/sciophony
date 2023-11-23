@@ -1,0 +1,6 @@
+- Have the gestures depend on global state a little (proportion of squares one, # of other entities)
+- Non-organic percussion
+- global_settings.py; make location
+- The repeated off gesture: bug?
+- glider: glissando? Stays alive even after it's gone?
+- Shapes disappearing when they go over boundary left and top
