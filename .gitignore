@@ -17,3 +17,4 @@ __pycache__/*
 *.aiff
 *.flac
 profiling_output.txt
+*.npy

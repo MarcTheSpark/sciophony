@@ -1,6 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 from scamp import *
+from scamp_extensions.pitch import Scale
 import math
 from global_settings import *
 
@@ -22,6 +23,8 @@ class Entity:
 
     mask_rotations = ()
 
+    scale = Scale.chromatic(60)
+
     @property
     def rx(self):
         return self.location[0] / GRID_SIZE[0]
@@ -33,7 +36,10 @@ class Entity:
     @property
     def rpos(self):
         return self.rx, self.ry
-    
+
+    def dist_from_scope_center(self):
+        return math.dist(self.location, MICROSCOPE_CENTER) / MICROSCOPE_RADIUS
+
     def start_playing(self):
         pass  # print(f"{type(self)} started at {self.location}")
         
@@ -60,9 +66,13 @@ class Box(Entity):
     
     def __post_init__(self):
         self.note = None
+
+    def get_pitch(self):
+        return self.scale.round(85 - 35 * self.ry)
     
     def start_playing(self):
-        self.note = bamboo.start_note(85 - self.location[1], self.volume_env, {"param_pan": self.rx})
+        self.note = bamboo.start_note(self.get_pitch(), self.volume_env,
+                                      {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
     
     def stop_playing(self):
         self.note.end()
@@ -79,9 +89,7 @@ class Beehive(Entity):
 
     mask_rotations = (1,)  # add 90 degree mask rotation
 
-    
     color = (0, 100, 255)  # BLUE
-    
 
     def __post_init__(self):
        
@@ -89,18 +97,18 @@ class Beehive(Entity):
         self.intro_done = False
  
     def get_pitch(self):
-        return int(80 - self.location[1] / 2)
+        return int(self.scale.round(92 - 30 * self.ry))
     
     def intro_gesture(self):
-        for pitch in range(self.get_pitch()-3,self.get_pitch()):
-            bee.play_note(pitch, 0.7, FRAMEDUR, {"param_pan": self.rx})
+        for pitch in range(self.get_pitch() - 3,self.get_pitch()):
+            bee.play_note(pitch, 0.7, FRAMEDUR, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
         self.intro_done = True
 
     def start_playing(self):
         s.fork(self.intro_gesture)
     
     def continue_playing(self):
-        if self.sustained_note is None:
+        if self.sustained_note is None and self.intro_done:
             self.sustained_note = bee.start_chord(
                 [self.get_pitch(),self.get_pitch()+2],
                 0.6,
@@ -126,18 +134,16 @@ class Loaf(Entity):
 
     mask_rotations = (1, 2, 3)  # add 90, 180, and 270 degree mask rotation
 
-    
     color = (255, 0, 255)  # PURPLE
-    
 
     def __post_init__(self):
         self.note = None
  
     def get_pitch(self):
-        return int(70 - self.ry * 20)
+        return int(self.scale.round(70 - self.ry * 20))
 
     def start_playing(self):
-        self.note = whale.start_note(self.get_pitch(), 0.7)
+        self.note = whale.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
      
     def stop_playing(self):
         self.note.end()
@@ -156,7 +162,6 @@ class Blinker(Entity):
     
     mask_match: int = None  # which mask did it match with
 
-    
     def __post_init__(self):
         self.phase = 1
         self.note = None
@@ -165,19 +170,22 @@ class Blinker(Entity):
     def get_volume(self):
         x = self.time_alive / 10
         return 0.4 * math.sin(x) ** 2 + 0.3 * math.atan(x)
-        
+
+    def get_pitch(self):
+        return int(self.scale.round(100 - 50 * self.ry)) + self.phase
+
     def start_playing(self):
-        self.note = woodTap.start_note(100 - self.location[1] + self.phase,
+        self.note = woodTap.start_note(self.get_pitch(),
                                        self.get_volume(),
-                                       {"param_pan": self.rx})
+                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
 
     def continue_playing(self):
         self.note.end()
         self.phase = 1 - self.phase
         self.time_alive += 1
-        self.note = woodTap.start_note(100 - self.location[1] + self.phase,
+        self.note = woodTap.start_note(self.get_pitch(),
                                        self.get_volume(),
-                                       {"param_pan": self.rx})
+                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
     
     def stop_playing(self):
         self.note.end()
@@ -221,12 +229,12 @@ class Glider(Entity):
         self.life_span = FRAMEDUR
  
     def get_pitch(self):
-        return int(85 - 30 * self.ry)
+        return 85 - 30 * self.ry
 
     def start_playing(self):
         self.sustained_note = ocarina.start_note(self.get_pitch(),
                                                  0.7,
-                                                 {"param_pan": self.rx})
+                                                 {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
         
     def continue_playing(self):
         self.life_span += FRAMEDUR
@@ -234,6 +242,7 @@ class Glider(Entity):
         if pitch != self.last_pitch:
             self.sustained_note.change_pitch(pitch)
             self.sustained_note.change_parameter("pan", self.rx)
+            self.sustained_note.change_parameter("dist", self.dist_from_scope_center() / 2)
         self.last_pitch = pitch
         
     def stop_playing(self):
@@ -241,14 +250,13 @@ class Glider(Entity):
         
     def end_gesture(self):
         end_gesture_length = min(5, max(5 * FRAMEDUR, self.life_span))
-        self.sustained_note.change_volume(0,  min(5, end_gesture_length))
+        self.sustained_note.change_parameter("dist", 1,  min(5, end_gesture_length), -2)
         self.sustained_note.change_pitch(
             self.get_pitch() + 10 if self.direction == 1 else self.get_pitch() - 10,
             end_gesture_length
         )
         wait(end_gesture_length)
         self.sustained_note.end()
-
 
 
 # -------------------- Extra processing ---------------------
