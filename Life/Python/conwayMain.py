@@ -53,15 +53,34 @@ grid[np.random.random((rows, cols)) > 0.9] = 1
 entities = {EntityType: [] for EntityType in entity_types}
 
 
-def draw_grid(grid):
-    for row in range(rows):
-        for col in range(cols):
-            color = (90, 90, 60) if grid[row][col] == 0 else WHITE
-            pygame.draw.rect(screen, color, [col * width, row * height, width, height])
+last_grid_drawn = None
+grid_buffer = pygame.Surface(screen.get_size())
 
+
+def draw_grid(grid):
+    global last_grid_drawn
+    if last_grid_drawn is None:
+        # redraw the whole grid
+        for row in range(rows):
+            for col in range(cols):
+                color = (90, 90, 60) if grid[row][col] == 0 else WHITE
+                pygame.draw.rect(grid_buffer, color, [col * width, row * height, width, height])
+    else:
+        # we are updating an old grid, so only redraw what has changed
+        updated_cells = np.where(grid != last_grid_drawn)
+        for row, col in zip(*updated_cells):
+            color = (90, 90, 60) if grid[row][col] == 0 else WHITE
+            pygame.draw.rect(grid_buffer, color, [col * width, row * height, width, height])
+
+    last_grid_drawn = grid
+    screen.blit(grid_buffer, (0, 0))
+
+
+def draw_entities():
     for entities_of_particular_type in entities.values():
         for entity in entities_of_particular_type:
             pygame.draw.rect(screen, entity.color, [entity.location[0] * width, entity.location[1] * height, width, height])
+
 
 def draw_microscope_overlay():
     CORNER_TL = (SQUARE_SIZE * (MICROSCOPE_CENTER[0] - MICROSCOPE_RADIUS),
@@ -237,14 +256,13 @@ while not done:
                 instrument.end_all_notes()
             done = True
         elif event.type == pygame.KEYDOWN:
-            print(event.key)
             if event.key == pygame.K_SPACE:
                 # Add your logic here for what happens when the spacebar is pressed
                 if count_down_to_pause != math.inf:
                     count_down_to_pause = math.inf
                 else:
                     count_down_to_pause = 0
-            elif event.key == 49:
+            elif event.key == pygame.K_1:
                 grid[:, :] = 0
                 grid[np.random.random((rows, cols)) > 0.9] = 1
             elif event.key == pygame.K_RIGHTBRACKET:
@@ -254,30 +272,24 @@ while not done:
                 print(get_mask_matches(grid, box))
                 print(time.perf_counter() - start)
 
-
     if count_down_to_pause:
         # --- Game logic should go here
         grid = update_grid(grid)
-        
-        # start = time.perf_counter()
         update_entities(grid * visibility_mask)
-        # print(time.perf_counter() - start)
-
-
-    column_activities = [int(x) for x in np.sum(grid > 0, axis=0)]
-    sc_osc_client.send_message("/shells/activity", column_activities)
-    activity_heights = [float(x) for x in get_mean_activity_heights(grid)]
-    sc_osc_client.send_message("/shells/heights", activity_heights)
-
-    # --- Screen-clearing code goes here
-    #screen.fill(BLACK)
 
     # --- Drawing code should go here
     draw_grid(grid * visibility_mask)
+    draw_entities()
     draw_microscope_overlay()
 
     # --- Go ahead and update the screen with what we've drawn.
     pygame.display.flip()
+
+    # --- Send info to shell granulator
+    column_activities = [int(x) for x in np.sum(grid > 0, axis=0)]
+    sc_osc_client.send_message("/shells/activity", column_activities)
+    activity_heights = [float(x) for x in get_mean_activity_heights(grid)]
+    sc_osc_client.send_message("/shells/heights", activity_heights)
 
     # --- Limit to 10 frames per second
     clock.tick(FRAMERATE)
@@ -297,7 +309,5 @@ with open('profiling_output.txt', 'w') as file:
 
     # Print the stats directly to the file
     ps.print_stats()
-#     ps.print_callers()
-#     ps.print_callees()
 
 print("Profiling results saved to 'profiling_output.txt'")
