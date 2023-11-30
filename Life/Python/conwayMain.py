@@ -45,9 +45,17 @@ cols, rows = GRID_SIZE
 # Create a 2D array of cells
 grid = np.zeros((rows, cols), dtype=int)
 
-# Initialize grid randomly
-grid[np.random.random((rows, cols)) > 0.9] = 1
-# grid[5:10, 0:5] = Glider.masks[3]
+
+last_random_grid = None
+
+
+def randomize_grid(threshold=0.9):
+    global last_random_grid
+    # Initialize grid randomly
+    last_random_grid = grid[:, :] = (np.random.random((rows, cols)) > threshold).astype(int)
+
+
+randomize_grid()
 
 
 entities = {EntityType: [] for EntityType in entity_types}
@@ -243,24 +251,11 @@ visibility_mask = get_visible_grid_mask()
 
 # ----------- UI Code ---------------
 
-def flip_cell(grid, mouse_pos):
-    global drag_value
-    x, y = mouse_pos
-    col = x // width  # assuming 'width' is the width of a cell
-    row = y // height # assuming 'height' is the height of a cell
-    if 0 <= col < cols and 0 <= row < rows:
-        if drag_value is None:
-            grid[row][col] = 1 - grid[row][col]  # Flips the cell state
-            drag_value = grid[row][col]
-        else:
-            grid[row][col] = drag_value
-
-
 drag_value = None
 
 
 def handle_event(event):
-    global done, count_down_to_pause, drag_value
+    global done, count_down_to_pause, drag_value, grid
     if event.type == pygame.QUIT:
         for instrument in s.instruments:
             instrument.end_all_notes()
@@ -279,15 +274,80 @@ def handle_event(event):
             else:
                 count_down_to_pause = 0
         elif event.key == pygame.K_1:
-            grid[:, :] = np.random.random((rows, cols)) > 0.9
+            randomize_grid()
         elif event.key == pygame.K_2:
             grid[:, :] = 0
+        elif event.key == pygame.K_s:
+            save_grid(grid, "Save current grid as:")
+        elif event.key == pygame.K_r:
+            save_grid(last_random_grid, "Save last random grid as:")
+        elif event.key == pygame.K_l:
+            grid = load_grid()
         elif event.key == pygame.K_RIGHTBRACKET:
             count_down_to_pause += 1
         elif event.key == pygame.K_BACKSLASH:
             start = time.perf_counter()
             print(get_mask_matches(grid, box))
             print(time.perf_counter() - start)
+
+
+def flip_cell(grid, mouse_pos):
+    global drag_value
+    x, y = mouse_pos
+    col = x // width  # assuming 'width' is the width of a cell
+    row = y // height # assuming 'height' is the height of a cell
+    if 0 <= col < cols and 0 <= row < rows:
+        if drag_value is None:
+            grid[row][col] = 1 - grid[row][col]  # Flips the cell state
+            drag_value = grid[row][col]
+        else:
+            grid[row][col] = drag_value
+
+
+def save_grid(grid, title):
+    import tkinter as tk
+    from tkinter import filedialog
+
+    # Hide the root Tkinter window
+    root = tk.Tk()
+    root.withdraw()
+
+    # Open the save file dialog
+    file_path = filedialog.asksaveasfilename(title=title,
+                                             defaultextension=".npy",
+                                             filetypes=[("Numpy Arrays", "*.npy"),
+                                                        ("All files", "*.*")])
+    if not file_path:  # If the user cancels, return
+        return
+
+    np.save(file_path, grid)
+
+    root.destroy()
+
+
+def load_grid():
+    import tkinter as tk
+    from tkinter import filedialog
+
+    # Hide the root Tkinter window
+    root = tk.Tk()
+    root.withdraw()
+
+    # Open the load file dialog
+    file_path = filedialog.askopenfilename(title="Load grid:",
+                                           defaultextension=".npy",
+                                           filetypes=[("Numpy Arrays", "*.npy"),
+                                                      ("All files", "*.*")])
+    if not file_path:  # If the user cancels, return
+        return None
+
+    # Load the array from the selected file
+    loaded_grid = np.load(file_path)
+
+    root.destroy()
+
+    return loaded_grid
+
 
 # -------- Main Program Loop -----------
 sc_osc_client.send_message("/shells/start", None)
@@ -304,9 +364,9 @@ while not done:
         handle_event(event)
 
     if count_down_to_pause:
-        # --- Game logic should go here
         grid = update_grid(grid)
-        update_entities(grid * visibility_mask)
+
+    update_entities(grid * visibility_mask)
 
     # --- Drawing code should go here
     draw_grid(grid * visibility_mask)
@@ -334,9 +394,9 @@ pygame.quit()
 
 # # STOP AND PRINT PROFILING
 # Open a file for writing the profiling results
-with open('profiling_output.txt', 'w') as file:
+with open('profiling_output.txt', 'w') as pro_file:
     sortby = SortKey.TIME
-    ps = pstats.Stats(pr, stream=file).sort_stats(sortby)
+    ps = pstats.Stats(pr, stream=pro_file).sort_stats(sortby)
 
     # Print the stats directly to the file
     ps.print_stats()
