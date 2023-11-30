@@ -1,0 +1,8 @@
+- Be able to draw in the pad by clicking and drawing pixels (pretty easy)
+- More than one world? Different textures? (Could evolve at different speeds?)
+- Scale mappings?
+- Offline version
+- Track random seeds; record the random seed or the start setup.
+- Record the performances?
+
+- Microscope focus. Size of the Window is a global parameter. Layer together different sizes of microscope of different sizes. But keep at the same speed.

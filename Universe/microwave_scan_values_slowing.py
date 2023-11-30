@@ -6,10 +6,10 @@ from expenvelope import Envelope
 from scipy.interpolate import interp1d
 
 
-PIECE_DURATION = 250
+PIECE_DURATION = 400
 
 sharpness_env = Envelope([0, 1], [PIECE_DURATION], curve_shapes=[1.5])
-arc_length_env = Envelope([0, 60], [PIECE_DURATION])
+arc_length_env = Envelope([0, 60], [PIECE_DURATION], curve_shapes=[-3])
 
 
 def calc_times_and_values():
@@ -25,7 +25,7 @@ def calc_times_and_values():
 
 
 def calc_cello_times_and_values():
-    cello_sharpness_env = Envelope([0.01, 0.01], [PIECE_DURATION])
+    cello_sharpness_env = Envelope([0.01, 0.4], [PIECE_DURATION])
     times = np.arange(0, PIECE_DURATION, 0.05)
     values = []
 
@@ -59,13 +59,13 @@ if os.path.exists(filename):
     data = np.load(filename)
     scan_times = data['times']
     scan_values = data['values']
-    cello_scan_values = data['cello_values']
+    cello_scan_values = scan_values  # data['cello_values']
     print("Done.")
 else:
     print("Calculating values...", end="")
     # Otherwise, calculate the NumPy arrays and save them to the file
     scan_times, scan_values = calc_times_and_values()
-    _, cello_scan_values = calc_cello_times_and_values()
+    _, cello_scan_values = scan_values  #calc_cello_times_and_values()
     np.savez(filename, times=scan_times, values=scan_values, cello_values=cello_scan_values)
     print("Done.")
 

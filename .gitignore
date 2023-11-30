@@ -8,3 +8,12 @@
 *.pyc
 *.reapeaks
 __pycache__/*
+*.rpp
+*.RPP
+*.rpp-bak
+*.RPP-bak
+*.sf2
+*.png
+*.aiff
+*.flac
+profiling_output.txt
