@@ -235,9 +235,59 @@ def get_visible_grid_mask(buffer=1):
     # Calculate the square of the distance from each point to the MICROSCOPE_CENTER
     distance_squared = (x - MICROSCOPE_CENTER[0])**2 + (y - MICROSCOPE_CENTER[1])**2
 
-    return (distance_squared < ((MICROSCOPE_RADIUS + 1)**2)).astype(int)
+    return (distance_squared < ((MICROSCOPE_RADIUS + buffer)**2)).astype(int)
+
 
 visibility_mask = get_visible_grid_mask()
+
+
+# ----------- UI Code ---------------
+
+def flip_cell(grid, mouse_pos):
+    global drag_value
+    x, y = mouse_pos
+    col = x // width  # assuming 'width' is the width of a cell
+    row = y // height # assuming 'height' is the height of a cell
+    if 0 <= col < cols and 0 <= row < rows:
+        if drag_value is None:
+            grid[row][col] = 1 - grid[row][col]  # Flips the cell state
+            drag_value = grid[row][col]
+        else:
+            grid[row][col] = drag_value
+
+
+drag_value = None
+
+
+def handle_event(event):
+    global done, count_down_to_pause, drag_value
+    if event.type == pygame.QUIT:
+        for instrument in s.instruments:
+            instrument.end_all_notes()
+        done = True
+    elif event.type == pygame.MOUSEBUTTONDOWN:
+        flip_cell(grid, pygame.mouse.get_pos())
+    elif event.type == pygame.MOUSEMOTION and drag_value is not None:
+        flip_cell(grid, pygame.mouse.get_pos())
+    elif event.type == pygame.MOUSEBUTTONUP:
+        drag_value = None
+    elif event.type == pygame.KEYDOWN:
+        if event.key == pygame.K_SPACE:
+            # Add your logic here for what happens when the spacebar is pressed
+            if count_down_to_pause != math.inf:
+                count_down_to_pause = math.inf
+            else:
+                count_down_to_pause = 0
+        elif event.key == pygame.K_1:
+            grid[:, :] = np.random.random((rows, cols)) > 0.9
+        elif event.key == pygame.K_2:
+            grid[:, :] = 0
+        elif event.key == pygame.K_RIGHTBRACKET:
+            count_down_to_pause += 1
+        elif event.key == pygame.K_BACKSLASH:
+            start = time.perf_counter()
+            print(get_mask_matches(grid, box))
+            print(time.perf_counter() - start)
 
 # -------- Main Program Loop -----------
 sc_osc_client.send_message("/shells/start", None)
@@ -251,26 +301,7 @@ pr.enable()
 while not done:
     # --- Main event loop
     for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            for instrument in s.instruments:
-                instrument.end_all_notes()
-            done = True
-        elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                # Add your logic here for what happens when the spacebar is pressed
-                if count_down_to_pause != math.inf:
-                    count_down_to_pause = math.inf
-                else:
-                    count_down_to_pause = 0
-            elif event.key == pygame.K_1:
-                grid[:, :] = 0
-                grid[np.random.random((rows, cols)) > 0.9] = 1
-            elif event.key == pygame.K_RIGHTBRACKET:
-                count_down_to_pause += 1
-            elif event.key == pygame.K_BACKSLASH:
-                start = time.perf_counter()
-                print(get_mask_matches(grid, box))
-                print(time.perf_counter() - start)
+        handle_event(event)
 
     if count_down_to_pause:
         # --- Game logic should go here
