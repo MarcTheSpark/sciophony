@@ -145,7 +145,8 @@ s.options.memSize = 2.pow(15);
 	~beeBuf = Buffer.read(s, "Audio/BeeWithAttack.wav".resolveRelative);
 	~highPluckBuf = Buffer.read(s, "Audio/HighPluck.wav".resolveRelative);
 	~woodTapBuf = Buffer.read(s, "Audio/WoodTap.wav".resolveRelative);
-	~whaleBuf = Buffer.read(s, "Audio/Whale.wav".resolveRelative);
+	~whaleBuf = Buffer.read(s, "Audio/Whale3.wav".resolveRelative);
+	~cricketBuf = Buffer.read(s, "Audio/Cricket.wav".resolveRelative);
 	s.sync;
 	ScampUtils.instrumentFromSynthDef(
 		SynthDef(\bamboo, {
@@ -180,11 +181,43 @@ s.options.memSize = 2.pow(15);
 		});
 	);
 	ScampUtils.instrumentFromSynthDef(
+		SynthDef(\whale, {
+			arg freq, volume=1, gate=1, pan=0.5, dist=0;
+			var instSound = ~loopSound.value(
+				freq: Lag.kr(freq, 0.5),
+				volume: Lag.kr(volume, 0.5),
+				gate: gate,
+				buf:~whaleBuf,
+				f0:316,
+				loopStart:1.6,
+				loopEnd:3.3, // between 0 (min) and 1 (max)
+				fadeTime:0.3,
+			);
+			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
+		})
+	);
+	ScampUtils.instrumentFromSynthDef(
+		SynthDef(\cricket, {
+			arg freq, volume=1, gate=1, pan=0.5, dist=0;
+			var instSound = ~loopSound.value(
+				freq: Lag.kr(freq, 0.5),
+				volume: Lag.kr(volume, 0.5),
+				gate: gate,
+				buf:~cricketBuf,
+				f0:2798,
+				loopStart:0.313,
+				loopEnd:1.815, // between 0 (min) and 1 (max)
+				fadeTime:0.05,
+			);
+			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
+		})
+	);
+	ScampUtils.instrumentFromSynthDef(
 		SynthDef(\bee, {
 			arg freq, volume=1, gate=1, pan=0.5, dist=0;
 			var instSound = ~loopSound.value(
 				freq: Lag.kr(freq, 0.5),
-				volume: Lag.kr(volume, 0.2) * 2,
+				volume: Lag.kr(volume, 0.2) * 1.4,
 				gate: gate,
 				buf:~beeBuf,
 				f0:274,
@@ -217,19 +250,6 @@ s.options.memSize = 2.pow(15);
 				gate: gate,
 				buf:~woodTapBuf,
 				f0:1601,
-			);
-			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
-		})
-	);
-	ScampUtils.instrumentFromSynthDef(
-		SynthDef(\whale, {
-			arg freq, volume=1, gate=1, pan=0.5, dist=0;
-			var instSound = ~oneShot.value(
-				freq: Lag.kr(freq, 0.5),
-				volume: Lag.kr(volume, 0.5),
-				gate: gate,
-				buf:~whaleBuf,
-				f0:316,
 			);
 			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
 		})

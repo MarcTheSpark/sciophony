@@ -87,7 +87,11 @@ def draw_grid(grid):
 def draw_entities():
     for entities_of_particular_type in entities.values():
         for entity in entities_of_particular_type:
-            pygame.draw.rect(screen, entity.color, [entity.location[0] * width, entity.location[1] * height, width, height])
+            mask = entity.masks[entity.mask_match]
+            offset = get_kernel_offset(mask)
+            xo, yo = entity.location[0] - offset[1], entity.location[1] - offset[0]
+            for y, x in zip(*np.where(mask > 0)):
+                pygame.draw.rect(screen, entity.color, [(xo + x) * width, (yo + y) * height, width, height])
 
 
 def draw_microscope_overlay():

@@ -12,6 +12,7 @@ woodTap = s.new_osc_part("woodTap", 57120)
 bee = s.new_osc_part("bee", 57120)
 ocarina = s.new_osc_part("ocarina", 57120)
 whale = s.new_osc_part("whale", 57120)
+cricket = s.new_osc_part("cricket", 57120)
 
 
 @dataclass
@@ -150,6 +151,35 @@ class Loaf(Entity):
 
 
 @dataclass
+class Beacon(Entity):
+    masks = [np.array([[1, 1, 0, 0],
+                       [1, 2, 0, 0],
+                       [0, 0, 1, 1],
+                       [0, 0, 1, 1]]),
+             np.array([[1, 1, 0, 0],
+                       [1, -1, 0, 0],
+                       [0, 0, 0, 1],
+                       [0, 0, 1, 1]])]
+
+    mask_rotations = (1,)  # add 90, 180, and 270 degree mask rotation
+
+    color = (100, 100, 255)
+
+    def __post_init__(self):
+        self.note = None
+
+    def get_pitch(self):
+        return int(self.scale.round(110 - self.ry * 20))
+
+    def start_playing(self):
+        self.note = cricket.start_note(self.get_pitch(), 0.7,
+                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+
+    def stop_playing(self):
+        self.note.end()
+
+
+@dataclass
 class Blinker(Entity):
         
     masks = [np.array([[0, 0, 0, 0, 0],
@@ -261,7 +291,7 @@ class Glider(Entity):
 
 # -------------------- Extra processing ---------------------
 
-entity_types = [Box, Beehive, Blinker, Glider, Loaf]
+entity_types = [Box, Beehive, Blinker, Glider, Loaf, Beacon]
 
 
 # add rotations to glider masks
