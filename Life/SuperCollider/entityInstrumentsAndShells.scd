@@ -260,29 +260,27 @@ s.options.memSize = 2.pow(15);
 
 ~setUpShells = {
 	var winenv = Env([1, 0], [1.0], [-3]);
-	var tileWidth = 64;
-	var tileHeight = 64;
-	var numTiles = tileWidth * tileHeight;
+	var panChannels = 10;
 
 	~shellSoundBuf = Buffer.read(s, "Audio/shellsCompressedFiltered.wav".resolveRelative);
 	// a custom envelope
 	~grainWindowBuf = Buffer.sendCollection(s, winenv.discretize, 1);
 
-	SynthDef(\shellGrains, { |out=0, gate = 1, volume = 1, sndbuf=(~shellSoundBuf), envbuf=(~grainWindowBuf)|
+	SynthDef(\shellGrains, { |out=0, gate = 1, volume = 1|
 		var panIndex, pan, filter, trig, env, granulated;
-		var activity = NamedControl.kr(\activities, Array.fill(tileWidth, {0}));  // distribution of activity from left to right
-		var averageHeights = NamedControl.kr(\averageHeights, Array.fill(tileWidth, {|i| tileHeight / 2}));
-		var activityPercent = activity.sum / numTiles;
+		var activity = NamedControl.kr(\activities, Array.fill(panChannels, {0}));  // distribution of activity from left to right
+		var averageHeights = NamedControl.kr(\averageHeights, Array.fill(panChannels, {0.5}));
+		var activityPercent = activity.sum / panChannels;
 		trig = Impulse.kr(activityPercent.explin(0.01, 1, 3, 100));
 		panIndex = TWindex.kr(trig, activity, normalize: 1);
-		pan = Select.kr(panIndex, Array.fill(tileWidth, {|i| i.linlin(0, tileWidth - 1, -1, 1)}));
-		filter = Select.kr(panIndex, averageHeights).linlin(0, tileHeight,0, 1);
+		pan = Select.kr(panIndex, Array.fill(panChannels, {|i| i.linlin(0, panChannels - 1, -1, 1)}));
+		filter = Select.kr(panIndex, averageHeights);
 		granulated = GrainBuf.ar(
-			2, trig, 0.25, sndbuf, filter.linexp(0, 1, 0.6, 1.5), WhiteNoise.kr(mul:0.2, add:filter*0.8 + 0.1), 2,
+			2, trig, 0.25, ~shellSoundBuf, filter.linexp(0, 1, 0.6, 1.5), WhiteNoise.kr(mul:0.2, add:filter*0.8 + 0.1), 2,
 			pan,
-			envbuf);
+			~grainWindowBuf);
 
-		Out.ar(out,granulated * EnvFollow.ar(K2A.ar(Select.kr(panIndex, activity).linlin(0, tileHeight,0, 4))) * EnvGate(volume, gate));
+		~distance.value(granulated * EnvFollow.ar(K2A.ar(Select.kr(panIndex, activity).linlin(0, 1, 0, 4))) * EnvGate(volume, gate), 0.2, out, ~reverbBus);
 	}).add;
 
 	OSCFunc.newMatching({|msg, time, addr, recvPort| x = Synth(\shellGrains)}, '/shells/start');
@@ -301,9 +299,9 @@ s.waitForBoot({
 		"Setting up reverb/distance function...".post;
 		~setUpReverbAndDistance.value; s.sync;
 		"done.".postln;
-/*		"Setting up shells...".post;
+		"Setting up shells...".post;
 		~setUpShells.value; s.sync;
-		"done.".postln;*/
+		"done.".postln;
 		"Setting up entity instruments...".post;
 		~setUpInstruments.value; s.sync;
 		"done.".postln;

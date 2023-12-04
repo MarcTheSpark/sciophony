@@ -1,6 +1,8 @@
 import pygame
 import numpy as np
 from numpy.fft import fft2, ifft2
+from scipy.ndimage import convolve1d
+from scipy.interpolate import interp1d
 from dataclasses import dataclass
 from entities import *
 import math
@@ -227,7 +229,7 @@ def update_entities(grid):
         entities[EntityType] = new_and_continuing
 
 
-def get_mean_activity_heights(grid):
+def get_mean_activity_heights(grid, rescale_width=10):
     # Calculating the mean row for each column where there are ones
     mean_rows = []
     for column in grid.T:  # Transpose the array to iterate over columns
@@ -236,8 +238,40 @@ def get_mean_activity_heights(grid):
             mean_row = np.mean(rows_with_ones)
         else:
             mean_row = 0  # In case there are no ones in the column
-        mean_rows.append(mean_row)
-    return mean_rows
+        mean_rows.append(float(mean_row) / grid.shape[0])
+    
+    return [float(x) for x in resize_array(mean_rows, rescale_width)]
+
+
+def get_column_activities(grid, rescale_width=10):
+    normalized_column_activities = np.sum(grid, axis=0) / float(grid.shape[0])
+    resized_column_activities = resize_array(normalized_column_activities, rescale_width)
+    # we rescale by dividing by visibility ratio to get a sense of activity within the visible area
+    return [float(x) / visibility_ratio for x in resized_column_activities]
+
+
+def resize_array(arr, new_size):
+    """
+    Resize a 1D array to a new size using convolution and interpolation.
+
+    Parameters:
+    arr (numpy.ndarray): The original array.
+    new_size (int): The desired size of the new array.
+
+    Returns:
+    numpy.ndarray: The resized array.
+    """
+    # Convolution to smooth the array
+    kernel_size = len(arr) // new_size
+    kernel = np.ones(kernel_size) / kernel_size
+    smoothed_arr = convolve1d(arr, kernel, mode='nearest')
+
+    # Interpolate the smoothed array
+    old_indices = np.linspace(0, len(smoothed_arr) - 1, num=len(smoothed_arr))
+    new_indices = np.linspace(0, len(smoothed_arr) - 1, num=new_size)
+    f = interp1d(old_indices, smoothed_arr, kind='linear')
+    
+    return f(new_indices)
 
 
 def get_visible_grid_mask(buffer=1):
@@ -251,7 +285,7 @@ def get_visible_grid_mask(buffer=1):
 
 
 visibility_mask = get_visible_grid_mask()
-
+visibility_ratio = np.sum(visibility_mask) / (grid.shape[0] * grid.shape[1])
 
 # ----------- UI Code ---------------
 
@@ -370,10 +404,12 @@ while not done:
     if count_down_to_pause:
         grid = update_grid(grid)
 
-    update_entities(grid * visibility_mask)
+
+    visible_grid = grid * visibility_mask
+    update_entities(visible_grid)
 
     # --- Drawing code should go here
-    draw_grid(grid * visibility_mask)
+    draw_grid(visible_grid)
     draw_entities()
     draw_microscope_overlay()
 
@@ -381,10 +417,8 @@ while not done:
     pygame.display.flip()
 
     # --- Send info to shell granulator
-    column_activities = [int(x) for x in np.sum(grid > 0, axis=0)]
-    sc_osc_client.send_message("/shells/activity", column_activities)
-    activity_heights = [float(x) for x in get_mean_activity_heights(grid)]
-    sc_osc_client.send_message("/shells/heights", activity_heights)
+    sc_osc_client.send_message("/shells/activity", get_column_activities(visible_grid > 0))
+    sc_osc_client.send_message("/shells/heights", get_mean_activity_heights(visible_grid > 0))
 
     # --- Limit to 10 frames per second
     clock.tick(FRAMERATE)
