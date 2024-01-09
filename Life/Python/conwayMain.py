@@ -36,9 +36,7 @@ clock = pygame.time.Clock()
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 
-microscope_circle = pygame.image.load('Images/Microscope.png').convert_alpha()
-microscope_circle = pygame.transform.scale(microscope_circle, (MICROSCOPE_RADIUS * SQUARE_SIZE * 2,
-                                                               MICROSCOPE_RADIUS * SQUARE_SIZE * 2))
+
 # Cell size
 width, height = SQUARE_SIZE, SQUARE_SIZE
 # Number of cells in each direction
@@ -49,7 +47,6 @@ grid = np.zeros((rows, cols), dtype=int)
 
 
 last_random_grid = None
-
 
 def randomize_grid(threshold=0.9):
     global last_random_grid
@@ -65,6 +62,38 @@ entities = {EntityType: [] for EntityType in entity_types}
 
 last_grid_drawn = None
 grid_buffer = pygame.Surface(screen.get_size())
+
+
+
+# ------------------- Microscope Slide -------------------------
+
+
+def get_visible_grid_mask(buffer=1):
+    """Returns the portion of the grid that is visible in the microscope circle"""
+    # Create an empty grid with the same dimensions as GRID_SIZE
+    y, x = np.ogrid[:GRID_SIZE[1], :GRID_SIZE[0]]
+    # Calculate the square of the distance from each point to the MICROSCOPE_CENTER
+    distance_squared = (x - MICROSCOPE_CENTER[0])**2 + (y - MICROSCOPE_CENTER[1])**2
+
+    return (distance_squared < ((MICROSCOPE_RADIUS + buffer)**2)).astype(int)
+
+
+microscope_circle_raw = pygame.image.load('Images/Microscope.png').convert_alpha()
+microscope_circle, visibility_mask, visibility_ratio = None, None, None
+
+
+def set_up_microscope_slide():
+    global microscope_circle, visibility_mask, visibility_ratio
+    microscope_circle = pygame.transform.scale(microscope_circle_raw, (MICROSCOPE_RADIUS * SQUARE_SIZE * 2,
+                                               MICROSCOPE_RADIUS * SQUARE_SIZE * 2))
+    visibility_mask = get_visible_grid_mask()
+    visibility_ratio = np.sum(visibility_mask) / (grid.shape[0] * grid.shape[1])
+
+
+set_up_microscope_slide()
+
+
+# ------------------- Drawing -------------------------
 
 
 def draw_grid(grid):
@@ -107,8 +136,20 @@ def draw_microscope_overlay():
     pygame.draw.rect(screen, BLACK, [0, CORNER_BR[1], size[0], size[1] - CORNER_BR[1]])
     pygame.draw.rect(screen, BLACK, [CORNER_BR[0], 0, size[0] - CORNER_BR[0], size[1]])
 
+
+def draw_microscope_drag():
+    if new_mic_slide_center is None:
+        return
+    center_x, center_y = cell_pos_to_mouse_pos(new_mic_slide_center)
+    radius = math.dist((center_x, center_y), pygame.mouse.get_pos())
+    pygame.draw.arc(screen,
+                    (255, 255, 255),
+                    (center_x - radius, center_y - radius, 2 * radius, 2 * radius),
+                    0, math.pi*2)
+
+
 def count_neighbors(grid):
-    rows, cols = grid.shape
+    rows, colsdf = grid.shape
     neighbor_count = np.zeros((rows, cols), dtype=int)
 
     for i in [-1, 0, 1]:
@@ -247,7 +288,8 @@ def get_column_activities(grid, rescale_width=10):
     normalized_column_activities = np.sum(grid, axis=0) / float(grid.shape[0])
     resized_column_activities = resize_array(normalized_column_activities, rescale_width)
     # we rescale by dividing by visibility ratio to get a sense of activity within the visible area
-    return [float(x) / visibility_ratio for x in resized_column_activities]
+    # (Or rather the square root of the visibility ratio, because otherwise, tiny circles end up sounding really dense)
+    return [float(x) / visibility_ratio ** 0.5 for x in resized_column_activities]
 
 
 def resize_array(arr, new_size):
@@ -273,37 +315,40 @@ def resize_array(arr, new_size):
     
     return f(new_indices)
 
-
-def get_visible_grid_mask(buffer=1):
-    """Returns the portion of the grid that is visible in the microscope circle"""
-    # Create an empty grid with the same dimensions as GRID_SIZE
-    y, x = np.ogrid[:GRID_SIZE[1], :GRID_SIZE[0]]
-    # Calculate the square of the distance from each point to the MICROSCOPE_CENTER
-    distance_squared = (x - MICROSCOPE_CENTER[0])**2 + (y - MICROSCOPE_CENTER[1])**2
-
-    return (distance_squared < ((MICROSCOPE_RADIUS + buffer)**2)).astype(int)
-
-
-visibility_mask = get_visible_grid_mask()
-visibility_ratio = np.sum(visibility_mask) / (grid.shape[0] * grid.shape[1])
-
 # ----------- UI Code ---------------
 
 drag_value = None
 
+control_down = False
+new_mic_slide_center = None
+
 
 def handle_event(event):
-    global done, count_down_to_pause, drag_value, grid
+    global done, count_down_to_pause, drag_value, grid, last_drawn_grid, \
+           new_mic_slide_center, MICROSCOPE_CENTER, MICROSCOPE_RADIUS, microscope_circle
     if event.type == pygame.QUIT:
         for instrument in s.instruments:
             instrument.end_all_notes()
         done = True
     elif event.type == pygame.MOUSEBUTTONDOWN:
-        flip_cell(grid, pygame.mouse.get_pos())
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
+            new_mic_slide_center = mouse_pos_to_cell_pos(pygame.mouse.get_pos())
+        else:
+            flip_cell(grid, pygame.mouse.get_pos())
     elif event.type == pygame.MOUSEMOTION and drag_value is not None:
-        flip_cell(grid, pygame.mouse.get_pos())
+        if new_mic_slide_center is None:
+            flip_cell(grid, pygame.mouse.get_pos())
     elif event.type == pygame.MOUSEBUTTONUP:
-        drag_value = None
+        if new_mic_slide_center is None:
+            last_drawn_grid = grid[:, :]
+            drag_value = None
+        else:
+            MICROSCOPE_CENTER = new_mic_slide_center
+            new_mic_slide_edge = mouse_pos_to_cell_pos(pygame.mouse.get_pos())
+            MICROSCOPE_RADIUS = int(math.dist(new_mic_slide_center, new_mic_slide_edge)) + 1
+            set_up_microscope_slide()
+            new_mic_slide_center = None
     elif event.type == pygame.KEYDOWN:
         if event.key == pygame.K_SPACE:
             # Add your logic here for what happens when the spacebar is pressed
@@ -319,6 +364,9 @@ def handle_event(event):
             save_grid(grid, "Save current grid as:")
         elif event.key == pygame.K_r:
             save_grid(last_random_grid, "Save last random grid as:")
+        elif event.key == pygame.K_d:
+            if last_drawn_grid is not None:
+                save_grid(last_drawn_grid, "Save last drawn grid as:")
         elif event.key == pygame.K_l:
             grid = load_grid()
         elif event.key == pygame.K_RIGHTBRACKET:
@@ -329,11 +377,22 @@ def handle_event(event):
             print(time.perf_counter() - start)
 
 
+last_drawn_grid = None
+
+
+def mouse_pos_to_cell_pos(mouse_pos):
+    x, y = mouse_pos
+    return x // width, y // height
+
+
+def cell_pos_to_mouse_pos(cell_pos):
+    col, row = cell_pos
+    return (col + 0.5) * width, (row + 0.5) * height
+
+
 def flip_cell(grid, mouse_pos):
     global drag_value
-    x, y = mouse_pos
-    col = x // width  # assuming 'width' is the width of a cell
-    row = y // height # assuming 'height' is the height of a cell
+    col, row = mouse_pos_to_cell_pos(mouse_pos)
     if 0 <= col < cols and 0 <= row < rows:
         if drag_value is None:
             grid[row][col] = 1 - grid[row][col]  # Flips the cell state
@@ -382,6 +441,14 @@ def load_grid():
     # Load the array from the selected file
     loaded_grid = np.load(file_path)
 
+    if (load_shape := np.shape(loaded_grid)) != (app_shape := np.shape(grid)):
+        new_grid = np.zeros(app_shape)
+        new_width = min(load_shape[0], app_shape[0])
+        new_height = min(load_shape[1], app_shape[1])
+        new_grid[app_shape[0] // 2 - new_width // 2: app_shape[0] // 2 + new_width // 2, app_shape[1] // 2 - new_height // 2: app_shape[1] // 2 + new_height // 2] = \
+            loaded_grid[load_shape[0] // 2 - new_width // 2: load_shape[0] // 2 + new_width // 2, load_shape[1] // 2 - new_height // 2: load_shape[1] // 2 + new_height // 2]
+        loaded_grid = new_grid
+
     root.destroy()
 
     return loaded_grid
@@ -404,7 +471,6 @@ while not done:
     if count_down_to_pause:
         grid = update_grid(grid)
 
-
     visible_grid = grid * visibility_mask
     update_entities(visible_grid)
 
@@ -412,6 +478,7 @@ while not done:
     draw_grid(visible_grid)
     draw_entities()
     draw_microscope_overlay()
+    draw_microscope_drag()
 
     # --- Go ahead and update the screen with what we've drawn.
     pygame.display.flip()

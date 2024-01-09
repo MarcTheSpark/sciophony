@@ -1,5 +1,0 @@
-- Fix the granulator so that the grid width and grid height are sent beforehand. Or maybe just there's a fixed array size
-for the granulator and we rescale the numpy array when we send it. That would be better.
-- Figure out why the granulator no longer sounds like shells
-- Reverb on the granulator?
-- Make some recordings!

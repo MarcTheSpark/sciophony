@@ -147,6 +147,10 @@ s.options.memSize = 2.pow(15);
 	~woodTapBuf = Buffer.read(s, "Audio/WoodTap.wav".resolveRelative);
 	~whaleBuf = Buffer.read(s, "Audio/Whale3.wav".resolveRelative);
 	~cricketBuf = Buffer.read(s, "Audio/Cricket.wav".resolveRelative);
+	~multiphonicBuf = Buffer.read(s, "Audio/Multiphonic.wav".resolveRelative);
+	~singingBuf = Buffer.read(s, "Audio/SingingBowl.wav".resolveRelative);
+	~tablaBuf = Buffer.read(s, "Audio/TablaTun.wav".resolveRelative);
+	~tanpuraBuf = Buffer.read(s, "Audio/TanpuraStart.wav".resolveRelative);
 	s.sync;
 	ScampUtils.instrumentFromSynthDef(
 		SynthDef(\bamboo, {
@@ -229,14 +233,62 @@ s.options.memSize = 2.pow(15);
 		}).add;
 	);
 	ScampUtils.instrumentFromSynthDef(
-		SynthDef(\highPluck, {
+		SynthDef(\multiphonic, {
+			arg freq, volume=1, gate=1, pan=0.5, dist=0;
+			var instSound = ~loopSound.value(
+				freq: Lag.kr(freq, 0.5),
+				volume: Lag.kr(volume, 0.2) * 1.4,
+				gate: gate,
+				buf:~multiphonicBuf,
+				f0:627,
+				loopStart:1,
+				loopEnd:6.5, // between 0 (min) and 1 (max)
+				fadeTime:0.7,
+			);
+			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
+		}).add;
+	);
+	ScampUtils.instrumentFromSynthDef(
+		SynthDef(\tanpura, {
+			arg freq, volume=1, gate=1, pan=0.5, dist=0;
+			var instSound = ~loopSound.value(
+				freq: Lag.kr(freq, 0.5),
+				volume: Lag.kr(volume, 0.2),
+				gate: gate,
+				buf:~tanpuraBuf,
+				f0:527,
+				loopStart:0.1,
+				loopEnd:0.8, // between 0 (min) and 1 (max)
+				fadeTime:0.3,
+			);
+			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
+		}).add;
+	);
+	ScampUtils.instrumentFromSynthDef(
+		SynthDef(\singingBowl, {
+			arg freq, volume=1, gate=1, pan=0.5, dist=0;
+			var instSound = ~loopSound.value(
+				freq: Lag.kr(freq, 0.5),
+				volume: Lag.kr(volume, 0.2) * 1.4,
+				gate: gate,
+				buf:~singingBuf,
+				f0:631,
+				loopStart:1,
+				loopEnd:10.1, // between 0 (min) and 1 (max)
+				fadeTime:0.1,
+			);
+			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
+		}).add;
+	);
+	ScampUtils.instrumentFromSynthDef(
+		SynthDef(\tablaTun, {
 			arg freq, volume=1, gate=1, pan=0.5, dist=0;
 			var instSound = ~oneShot.value(
 				freq: Lag.kr(freq, 0.5),
-				volume: Lag.kr(volume, 0.5),
+				volume: Lag.kr(volume, 0.5) * 0.5,
 				gate: gate,
-				buf:~highPluckBuf,
-				f0:1595,
+				buf:~tablaBuf,
+				f0:316,
 			);
 			~distance.value(Pan2.ar(instSound, Lag.kr(pan, 1).linlin(0, 1, -1, 1)), Lag.kr(dist, 1), 0, ~reverbBus);
 		})
@@ -246,7 +298,7 @@ s.options.memSize = 2.pow(15);
 			arg freq, volume=1, gate=1, pan=0.5, dist=0;
 			var instSound = ~oneShot.value(
 				freq: Lag.kr(freq, 0.5),
-				volume: Lag.kr(volume, 0.5) * 0.35,
+				volume: Lag.kr(volume, 0.5) * 0.4,
 				gate: gate,
 				buf:~woodTapBuf,
 				f0:1601,
@@ -271,7 +323,7 @@ s.options.memSize = 2.pow(15);
 		var activity = NamedControl.kr(\activities, Array.fill(panChannels, {0}));  // distribution of activity from left to right
 		var averageHeights = NamedControl.kr(\averageHeights, Array.fill(panChannels, {0.5}));
 		var activityPercent = activity.sum / panChannels;
-		trig = Impulse.kr(activityPercent.explin(0.01, 1, 3, 100));
+		trig = Impulse.kr(activityPercent.explin(0.01, 1, 8, 180));
 		panIndex = TWindex.kr(trig, activity, normalize: 1);
 		pan = Select.kr(panIndex, Array.fill(panChannels, {|i| i.linlin(0, panChannels - 1, -1, 1)}));
 		filter = Select.kr(panIndex, averageHeights);

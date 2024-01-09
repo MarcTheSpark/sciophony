@@ -13,6 +13,10 @@ bee = s.new_osc_part("bee", 57120)
 ocarina = s.new_osc_part("ocarina", 57120)
 whale = s.new_osc_part("whale", 57120)
 cricket = s.new_osc_part("cricket", 57120)
+multiphonic = s.new_osc_part("multiphonic", 57120)
+bowl = s.new_osc_part("singingBowl", 57120)
+tabla = s.new_osc_part("tablaTun", 57120)
+tanpura = s.new_osc_part("tanpura", 57120)
 
 
 @dataclass
@@ -151,6 +155,108 @@ class Loaf(Entity):
 
 
 @dataclass
+class Boat(Entity):
+        
+    masks = [np.array([[0, 0, 0, 0, 0],
+                       [0, 1, 1, 0, 0],
+                       [0, 1, -1, 1, 0],
+                       [0, 0, 1, 0, 0],
+                       [0, 0, 0, 0, 0]])]
+
+    mask_rotations = (1, 2, 3)  # add 90, 180, and 270 degree mask rotation
+
+    color = (0, 130, 255)  # PURPLE
+
+    def __post_init__(self):
+        self.note = None
+ 
+    def get_pitch(self):
+        return int(self.scale.round(80 - self.ry * 20))
+
+    def start_playing(self):
+        self.note = multiphonic.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+     
+    def stop_playing(self):
+        self.note.end()
+        
+
+@dataclass
+class Ship(Entity):
+        
+    masks = [np.array([[1, 1, 0],
+                       [1, -1, 1],
+                       [0, 1, 1]])]
+
+    mask_rotations = (1,)  # add 90, 180, and 270 degree mask rotation
+
+    color = (50, 160, 200)
+
+    def __post_init__(self):
+        self.note = None
+ 
+    def get_pitch(self):
+        return int(self.scale.round(80 - self.ry * 20))
+
+    def start_playing(self):
+        self.note = multiphonic.start_chord([self.get_pitch() - 1, self.get_pitch() + 1], 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+     
+    def stop_playing(self):
+        self.note.end()
+
+
+@dataclass
+class Pond(Entity):
+        
+    masks = [np.array([[0, 1, 1, 0],
+                       [1, -1, 0, 1],
+                       [1, 0, -1, 1],
+                       [0, 1, 1, 0]])]
+
+    mask_rotations = ()
+    
+    color = (200, 90, 40)
+    
+    note_envelope = Envelope([1, 1, 0.4], [0.5, 1])
+
+
+    def __post_init__(self):
+        self.note = None
+ 
+    def get_pitch(self):
+        return int(self.scale.round(72 - self.ry * 17))
+
+    def start_playing(self):
+        self.note = tanpura.start_note(self.get_pitch(), self.note_envelope, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+     
+    def stop_playing(self):
+        self.note.end()
+        
+
+@dataclass
+class Tub(Entity):
+        
+    masks = [np.array([[ 0, 1, 0],
+                       [1, -1, 1],
+                       [0, 1, 0]])]
+
+    mask_rotations = ()
+
+    color = (255, 130, 0)  # PURPLE
+
+    def __post_init__(self):
+        self.note = None
+ 
+    def get_pitch(self):
+        return int(self.scale.round(80 - self.ry * 20))
+
+    def start_playing(self):
+        self.note = bowl.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+     
+    def stop_playing(self):
+        self.note.end()
+        
+
+@dataclass
 class Beacon(Entity):
     masks = [np.array([[1, 1, 0, 0],
                        [1, 2, 0, 0],
@@ -193,7 +299,6 @@ class Blinker(Entity):
     mask_match: int = None  # which mask did it match with
 
     def __post_init__(self):
-        self.phase = 1
         self.note = None
         self.time_alive = 0
  
@@ -202,7 +307,7 @@ class Blinker(Entity):
         return 0.4 * math.sin(x) ** 2 + 0.3 * math.atan(x)
 
     def get_pitch(self):
-        return int(self.scale.round(100 - 50 * self.ry)) + self.phase
+        return int(self.scale.round(100 - 50 * self.ry)) - self.mask_match
 
     def start_playing(self):
         self.note = woodTap.start_note(self.get_pitch(),
@@ -211,11 +316,56 @@ class Blinker(Entity):
 
     def continue_playing(self):
         self.note.end()
-        self.phase = 1 - self.phase
         self.time_alive += 1
         self.note = woodTap.start_note(self.get_pitch(),
                                        self.get_volume(),
                                        {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+    
+    def stop_playing(self):
+        self.note.end()
+        
+        
+
+@dataclass
+class Toad(Entity):
+        
+    masks = [np.array([[0, 0, 0, 0],
+                       [0, 2, 1, 1],
+                       [1, 1, 1, 0],
+                       [0, 0, 0, 0]]),
+             np.array([[0, 0, 1, 0],
+                       [1, -1, 0, 1],
+                       [1, 0, 0, 1],
+                       [0, 1, 0, 0]])]
+    
+    mask_rotations = (1,)  # add 90 degree mask rotation
+
+    color = (0, 150, 0)  # GREEN
+        
+    mask_match: int = None  # which mask did it match with
+
+    def __post_init__(self):
+        self.note = None
+        self.time_alive = 0
+ 
+    def get_volume(self):
+        x = self.time_alive / 10
+        return 0.4 * math.sin(x) ** 2 + 0.3 * math.atan(x)
+
+    def get_pitch(self):
+        return int(self.scale.round(100 - 34 * self.ry)) + 3 * (self.mask_match % 2)
+
+    def start_playing(self):
+        self.note = tabla.start_note(self.get_pitch(),
+                                     self.get_volume(),
+                                    {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+
+    def continue_playing(self):
+        self.note.end()
+        self.time_alive += 1
+        self.note = tabla.start_note(self.get_pitch(),
+                                     self.get_volume(),
+                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
     
     def stop_playing(self):
         self.note.end()
@@ -291,7 +441,7 @@ class Glider(Entity):
 
 # -------------------- Extra processing ---------------------
 
-entity_types = [Box, Beehive, Blinker, Glider, Loaf, Beacon]
+entity_types = [Box, Beehive, Blinker, Toad,  Glider, Loaf, Boat, Tub, Pond, Beacon, Ship]
 
 
 # add rotations to glider masks
