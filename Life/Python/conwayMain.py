@@ -5,6 +5,7 @@ from scipy.ndimage import convolve1d
 from scipy.interpolate import interp1d
 from dataclasses import dataclass
 from entities import *
+import entities as entities_module
 import math
 import time
 from global_settings import *
@@ -35,7 +36,7 @@ clock = pygame.time.Clock()
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-
+BG_COLOR = (210, 210, 210)
 
 # Cell size
 width, height = SQUARE_SIZE, SQUARE_SIZE
@@ -48,10 +49,14 @@ grid = np.zeros((rows, cols), dtype=int)
 
 last_random_grid = None
 
-def randomize_grid(threshold=0.9):
+
+def randomize_grid(threshold=0.9, invisible_only=False):
     global last_random_grid
     # Initialize grid randomly
-    last_random_grid = grid[:, :] = (np.random.random((rows, cols)) > threshold).astype(int)
+    grid[:, :] = (np.random.random((rows, cols)) > threshold).astype(int)
+    if invisible_only:
+        grid[np.where(get_visible_grid_mask(1))] = 0
+    last_random_grid = grid[:, :]
 
 
 randomize_grid()
@@ -64,11 +69,10 @@ last_grid_drawn = None
 grid_buffer = pygame.Surface(screen.get_size())
 
 
-
 # ------------------- Microscope Slide -------------------------
 
 
-def get_visible_grid_mask(buffer=1):
+def get_visible_grid_mask(buffer=3):
     """Returns the portion of the grid that is visible in the microscope circle"""
     # Create an empty grid with the same dimensions as GRID_SIZE
     y, x = np.ogrid[:GRID_SIZE[1], :GRID_SIZE[0]]
@@ -78,7 +82,7 @@ def get_visible_grid_mask(buffer=1):
     return (distance_squared < ((MICROSCOPE_RADIUS + buffer)**2)).astype(int)
 
 
-microscope_circle_raw = pygame.image.load('Images/Microscope.png').convert_alpha()
+microscope_circle_raw = pygame.image.load('Images/Microscope2.png').convert_alpha()
 microscope_circle, visibility_mask, visibility_ratio = None, None, None
 
 
@@ -98,18 +102,36 @@ set_up_microscope_slide()
 
 def draw_grid(grid):
     global last_grid_drawn
-    if last_grid_drawn is None:
+    line_width = max(1, SQUARE_SIZE // 16)
+
+    if True: #last_grid_drawn is None:
         # redraw the whole grid
         for row in range(rows):
             for col in range(cols):
-                color = (90, 90, 60) if grid[row][col] == 0 else WHITE
+                color = BG_COLOR if grid[row][col] == 0 else WHITE
                 pygame.draw.rect(grid_buffer, color, [col * width, row * height, width, height])
     else:
         # we are updating an old grid, so only redraw what has changed
         updated_cells = np.where(grid != last_grid_drawn)
         for row, col in zip(*updated_cells):
-            color = (90, 90, 60) if grid[row][col] == 0 else WHITE
-            pygame.draw.rect(grid_buffer, color, [col * width, row * height, width, height])
+            color = BG_COLOR if grid[row][col] == 0 else WHITE
+            pygame.draw.rect(grid_buffer, color, [col * width, row * height, width+line_width, height+line_width])
+
+    for row in range(rows):
+        for col in range(cols):
+            if grid[row][col]:
+                pygame.draw.line(grid_buffer, BLACK,
+                                 (col * width, row * height),
+                                 (col* width, (row + 1) * height), max(1, SQUARE_SIZE // 16))
+                pygame.draw.line(grid_buffer, BLACK,
+                                 ((col+ 1) * width, row * height),
+                                 ((col+ 1) * width, (row + 1) * height), max(1, SQUARE_SIZE // 16))
+                pygame.draw.line(grid_buffer, BLACK,
+                                 (col* width, row * height),
+                                 ((col+ 1) * width, row * height), max(1, SQUARE_SIZE // 16))
+                pygame.draw.line(grid_buffer, BLACK,
+                                 ((col+ 1) * width, (row + 1) * height),
+                                 (col* width, (row + 1) * height), max(1, SQUARE_SIZE // 16))
 
     last_grid_drawn = grid
     screen.blit(grid_buffer, (0, 0))
@@ -121,8 +143,27 @@ def draw_entities():
             mask = entity.masks[entity.mask_match]
             offset = get_kernel_offset(mask)
             xo, yo = entity.location[0] - offset[1], entity.location[1] - offset[0]
-            for y, x in zip(*np.where(mask > 0)):
+            active_squares = set(zip(*np.where(mask > 0)))
+            line_width = max(1, SQUARE_SIZE // 16)
+            for y, x in active_squares:
+                line_inset = max(line_width // 2, 1)
                 pygame.draw.rect(screen, entity.color, [(xo + x) * width, (yo + y) * height, width, height])
+                if (y, x-1) not in active_squares:
+                    pygame.draw.line(screen, BLACK,
+                                     ((xo + x) * width, (yo + y) * height),
+                                     ((xo + x) * width, ((yo + y) + 1) * height), line_width)
+                if (y, x+1) not in active_squares:
+                    pygame.draw.line(screen, BLACK,
+                                     (((xo + x) + 1) * width - line_inset, (yo + y) * height),
+                                     (((xo + x) + 1) * width - line_inset, ((yo + y) + 1) * height), line_width)
+                if (y-1, x) not in active_squares:
+                    pygame.draw.line(screen, BLACK,
+                                     ((xo + x) * width, (yo + y) * height),
+                                     (((xo + x) + 1) * width, (yo + y) * height), line_width)
+                if (y+1, x) not in active_squares:
+                    pygame.draw.line(screen, BLACK,
+                                     (((xo + x) + 1) * width, ((yo + y) + 1) * height - line_inset),
+                                     ((xo + x) * width, ((yo + y) + 1) * height - line_inset), line_width)
 
 
 def draw_microscope_overlay():
@@ -220,8 +261,8 @@ def get_wrapped_slice(arr, x, y, w, h):
 
 
 def get_kernel_offset(kernel):
-    # Find indices where value is greater than 1 or less than 0
-    indices = np.argwhere((kernel > 1) | (kernel < 0))
+    # Find indices where value is 2 or -1
+    indices = np.argwhere((kernel == 2) | (kernel == -1))
     # Get the first such index, if any
     return indices[0] if len(indices) > 0 else (0, 0)
 
@@ -231,8 +272,13 @@ def get_perfect_matches(grid, kernel, threshold_proportion=1, tolerance=1e-5):
     white_matches = get_mask_matches(grid > 0, kernel > 0, threshold_proportion=threshold_proportion, tolerance=tolerance)
     kernel_offset = get_kernel_offset(kernel)
     # for reasons I don't understand, the x and y here are flipped. :-/
-    perfect_matches = [(int((y + kernel_offset[1]) % cols), int((x + kernel_offset[0]) % rows)) for x, y in white_matches if np.all((kernel > 0) == get_wrapped_slice(grid > 0, x, y, *kernel.shape))]
+    perfect_matches = [(int((y + kernel_offset[1]) % cols), int((x + kernel_offset[0]) % rows)) for x, y in white_matches
+                       if _test_perfect_fit(get_wrapped_slice(grid > 0, x, y, *kernel.shape), kernel)]
     return perfect_matches
+
+
+def _test_perfect_fit(grid_slice, kernel):
+    return np.all(((kernel > 0) == grid_slice) | (kernel == -2))
 
 
 def distance_mod_n(a, b, n):
@@ -268,6 +314,20 @@ def update_entities(grid):
         for entity in entities[EntityType]:
             entity.stop_playing()
         entities[EntityType] = new_and_continuing
+
+
+def get_grid_minus_entities(grid, entities):
+    grid_minus_entities = np.copy(grid)
+    for entities_of_particular_type in entities.values():
+        for entity in entities_of_particular_type:
+            mask = entity.masks[entity.mask_match]
+            offset = get_kernel_offset(mask)
+            xo, yo = entity.location[0] - offset[1], entity.location[1] - offset[0]
+            active_squares = set(zip(*np.where(mask > 0)))
+            for y, x in active_squares:
+                grid_minus_entities[(yo + y) % rows, (xo + x) % cols] = 0
+
+    return grid_minus_entities
 
 
 def get_mean_activity_heights(grid, rescale_width=10):
@@ -360,21 +420,32 @@ def handle_event(event):
             randomize_grid()
         elif event.key == pygame.K_2:
             grid[:, :] = 0
+        elif event.key == pygame.K_3:
+            randomize_grid(0.7, invisible_only=True)
         elif event.key == pygame.K_s:
             save_grid(grid, "Save current grid as:")
         elif event.key == pygame.K_r:
-            save_grid(last_random_grid, "Save last random grid as:")
+            if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                grid = last_random_grid
+            else:
+                save_grid(last_random_grid, "Save last random grid as:")
         elif event.key == pygame.K_d:
             if last_drawn_grid is not None:
                 save_grid(last_drawn_grid, "Save last drawn grid as:")
         elif event.key == pygame.K_l:
-            grid = load_grid()
+            if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                grid = last_drawn_grid
+            else:
+                loaded_grid = load_grid()
+                if loaded_grid is not None:
+                    grid = loaded_grid
+                    last_drawn_grid = grid
         elif event.key == pygame.K_RIGHTBRACKET:
             count_down_to_pause += 1
-        elif event.key == pygame.K_BACKSLASH:
-            start = time.perf_counter()
-            print(get_mask_matches(grid, box))
-            print(time.perf_counter() - start)
+        elif event.key == pygame.K_UP:
+            entities_module.GLOBAL_PITCH_SHIFT += 1
+        elif event.key == pygame.K_DOWN:
+            entities_module.GLOBAL_PITCH_SHIFT -= 1
 
 
 last_drawn_grid = None
@@ -484,8 +555,10 @@ while not done:
     pygame.display.flip()
 
     # --- Send info to shell granulator
-    sc_osc_client.send_message("/shells/activity", get_column_activities(visible_grid > 0))
-    sc_osc_client.send_message("/shells/heights", get_mean_activity_heights(visible_grid > 0))
+    visible_grid_minus_entities = get_grid_minus_entities(visible_grid, entities)
+    sc_osc_client.send_message("/shells/activity", get_column_activities(visible_grid_minus_entities > 0))
+    sc_osc_client.send_message("/shells/heights", get_mean_activity_heights(visible_grid_minus_entities > 0))
+    sc_osc_client.send_message("/shells/pitchShift", entities_module.GLOBAL_PITCH_SHIFT)
 
     # --- Limit to 10 frames per second
     clock.tick(FRAMERATE)

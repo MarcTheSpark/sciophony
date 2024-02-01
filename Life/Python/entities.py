@@ -73,11 +73,11 @@ class Box(Entity):
         self.note = None
 
     def get_pitch(self):
-        return self.scale.round(85 - 35 * self.ry)
+        return self.scale.round(85 - 35 * self.ry) + GLOBAL_PITCH_SHIFT
     
     def start_playing(self):
         self.note = bamboo.start_note(self.get_pitch(), self.volume_env,
-                                      {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                      {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
     
     def stop_playing(self):
         self.note.end()
@@ -86,11 +86,11 @@ class Box(Entity):
 @dataclass
 class Beehive(Entity):
         
-    masks = [np.array([[0, 0, 0, 0, 0, 0],
+    masks = [np.array([[-2, 0, 0, 0, 0, -2],
                        [0, 0, 1, 1, 0, 0],
                        [0, 1, -1, 0, 1, 0],
                        [0, 0, 1, 1, 0, 0],
-                       [0, 0, 0, 0, 0, 0]])]
+                       [-2, 0, 0, 0, 0, -2]])]
 
     mask_rotations = (1,)  # add 90 degree mask rotation
 
@@ -102,11 +102,11 @@ class Beehive(Entity):
         self.intro_done = False
  
     def get_pitch(self):
-        return int(self.scale.round(92 - 30 * self.ry))
+        return int(self.scale.round(92 - 30 * self.ry)) + GLOBAL_PITCH_SHIFT
     
     def intro_gesture(self):
         for pitch in range(self.get_pitch() - 3,self.get_pitch()):
-            bee.play_note(pitch, 0.7, FRAMEDUR, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+            bee.play_note(pitch, 0.7, FRAMEDUR, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
         self.intro_done = True
 
     def start_playing(self):
@@ -132,10 +132,12 @@ class Beehive(Entity):
 @dataclass
 class Loaf(Entity):
         
-    masks = [np.array([[0, 1, 1, 0],
-                       [1, 0, -1, 1],
-                       [0, 1, 0, 1],
-                       [0, 0, 1, 0]])]
+    masks = [np.array([[-2,  0, 0,  0, 0, -2],
+                       [0,   0, 1,  1, 0, 0],
+                       [0,   1, 0, -1, 1, 0],
+                       [0,   0, 1,  0, 1, 0],
+                       [-2,  0, 0,  1, 0, 0],
+                       [-2, -2, 0,  0, 0, -2]])]
 
     mask_rotations = (1, 2, 3)  # add 90, 180, and 270 degree mask rotation
 
@@ -145,10 +147,10 @@ class Loaf(Entity):
         self.note = None
  
     def get_pitch(self):
-        return int(self.scale.round(70 - self.ry * 20))
+        return int(self.scale.round(70 - self.ry * 20)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
-        self.note = whale.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+        self.note = whale.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
      
     def stop_playing(self):
         self.note.end()
@@ -157,11 +159,11 @@ class Loaf(Entity):
 @dataclass
 class Boat(Entity):
         
-    masks = [np.array([[0, 0, 0, 0, 0],
-                       [0, 1, 1, 0, 0],
-                       [0, 1, -1, 1, 0],
-                       [0, 0, 1, 0, 0],
-                       [0, 0, 0, 0, 0]])]
+    masks = [np.array([[0,  0, 0,  0, -2],
+                       [0,  1, 1,  0, 0],
+                       [0,  1, -1, 1, 0],
+                       [0,  0, 1,  0, -2],
+                       [-2, 0, 0, -2, -2]])]
 
     mask_rotations = (1, 2, 3)  # add 90, 180, and 270 degree mask rotation
 
@@ -171,10 +173,10 @@ class Boat(Entity):
         self.note = None
  
     def get_pitch(self):
-        return int(self.scale.round(80 - self.ry * 20))
+        return int(self.scale.round(80 - self.ry * 20)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
-        self.note = multiphonic.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+        self.note = multiphonic.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
      
     def stop_playing(self):
         self.note.end()
@@ -183,9 +185,11 @@ class Boat(Entity):
 @dataclass
 class Ship(Entity):
         
-    masks = [np.array([[1, 1, 0],
-                       [1, -1, 1],
-                       [0, 1, 1]])]
+    masks = [np.array([[-2, 0, 0, 0, -2],
+                       [0, 1, 1, 0, 0],
+                       [0, 1, -1, 1, 0],
+                       [0, 0, 1, 1, 0],
+                       [-2, 0, 0, 0, -2]])]
 
     mask_rotations = (1,)  # add 90, 180, and 270 degree mask rotation
 
@@ -195,10 +199,10 @@ class Ship(Entity):
         self.note = None
  
     def get_pitch(self):
-        return int(self.scale.round(80 - self.ry * 20))
+        return int(self.scale.round(80 - self.ry * 20)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
-        self.note = multiphonic.start_chord([self.get_pitch() - 1, self.get_pitch() + 1], 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+        self.note = multiphonic.start_chord([self.get_pitch() - 1, self.get_pitch() + 1], 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
      
     def stop_playing(self):
         self.note.end()
@@ -207,10 +211,12 @@ class Ship(Entity):
 @dataclass
 class Pond(Entity):
         
-    masks = [np.array([[0, 1, 1, 0],
-                       [1, -1, 0, 1],
-                       [1, 0, -1, 1],
-                       [0, 1, 1, 0]])]
+    masks = [np.array([[-2, -2, 0, 0, -2, -2],
+                       [-2, 0, 1, 1, 0, -2],
+                       [0, 1, -1, 0, 1, 0],
+                       [0, 1, 0, -1, 1, 0],
+                       [-2, 0, 1, 1, 0, -2],
+                       [-2, -2, 0, 0, -2, -2]])]
 
     mask_rotations = ()
     
@@ -223,10 +229,10 @@ class Pond(Entity):
         self.note = None
  
     def get_pitch(self):
-        return int(self.scale.round(72 - self.ry * 17))
+        return int(self.scale.round(72 - self.ry * 17)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
-        self.note = tanpura.start_note(self.get_pitch(), self.note_envelope, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+        self.note = tanpura.start_note(self.get_pitch(), self.note_envelope, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
      
     def stop_playing(self):
         self.note.end()
@@ -235,9 +241,11 @@ class Pond(Entity):
 @dataclass
 class Tub(Entity):
         
-    masks = [np.array([[ 0, 1, 0],
-                       [1, -1, 1],
-                       [0, 1, 0]])]
+    masks = [np.array([[-2, -2, 0, -2, -2],
+                       [-2,  0, 1, 0, -2],
+                       [0,   1, -1, 1, 0],
+                       [-2,  0, 1, 0, -2],
+                       [-2, -2, 0, -2, -2]])]
 
     mask_rotations = ()
 
@@ -247,10 +255,10 @@ class Tub(Entity):
         self.note = None
  
     def get_pitch(self):
-        return int(self.scale.round(80 - self.ry * 20))
+        return int(self.scale.round(80 - self.ry * 20)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
-        self.note = bowl.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+        self.note = bowl.start_note(self.get_pitch(), 0.7, {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
      
     def stop_playing(self):
         self.note.end()
@@ -258,14 +266,18 @@ class Tub(Entity):
 
 @dataclass
 class Beacon(Entity):
-    masks = [np.array([[1, 1, 0, 0],
-                       [1, 2, 0, 0],
-                       [0, 0, 1, 1],
-                       [0, 0, 1, 1]]),
-             np.array([[1, 1, 0, 0],
-                       [1, -1, 0, 0],
-                       [0, 0, 0, 1],
-                       [0, 0, 1, 1]])]
+    masks = [np.array([[0,  0, 0, 0, -2, -2],
+                       [0,  1, 1, 0, -2, -2],
+                       [0,  1, 2, 0, 0, 0],
+                       [0,  0, 0, 1, 1, 0],
+                       [-2, -2, 0, 1, 1, 0],
+                       [-2, -2, 0, 0, 0, 0]]),
+             np.array([[0,  0,  0, 0, -2, -2],
+                       [0,  1,  1, 0, -2, -2],
+                       [0,  1, -1, 0, 0, 0],
+                       [0,  0,  0, 0, 1, 0],
+                       [-2, -2, 0, 1, 1, 0],
+                       [-2, -2, 0, 0, 0, 0]])]
 
     mask_rotations = (1,)  # add 90, 180, and 270 degree mask rotation
 
@@ -275,11 +287,11 @@ class Beacon(Entity):
         self.note = None
 
     def get_pitch(self):
-        return int(self.scale.round(110 - self.ry * 20))
+        return int(self.scale.round(110 - self.ry * 20)) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
         self.note = cricket.start_note(self.get_pitch(), 0.7,
-                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
 
     def stop_playing(self):
         self.note.end()
@@ -307,19 +319,19 @@ class Blinker(Entity):
         return 0.4 * math.sin(x) ** 2 + 0.3 * math.atan(x)
 
     def get_pitch(self):
-        return int(self.scale.round(100 - 50 * self.ry)) - self.mask_match
+        return int(self.scale.round(100 - 50 * self.ry)) - self.mask_match + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
         self.note = woodTap.start_note(self.get_pitch(),
                                        self.get_volume(),
-                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
 
     def continue_playing(self):
         self.note.end()
         self.time_alive += 1
         self.note = woodTap.start_note(self.get_pitch(),
                                        self.get_volume(),
-                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                       {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
     
     def stop_playing(self):
         self.note.end()
@@ -329,14 +341,26 @@ class Blinker(Entity):
 @dataclass
 class Toad(Entity):
         
-    masks = [np.array([[0, 0, 0, 0],
-                       [0, 2, 1, 1],
-                       [1, 1, 1, 0],
-                       [0, 0, 0, 0]]),
-             np.array([[0, 0, 1, 0],
-                       [1, -1, 0, 1],
-                       [1, 0, 0, 1],
-                       [0, 1, 0, 0]])]
+    masks = [np.array([[-2, 0, 0, 0, 0, 0],
+                       [0, 0, 2, 1, 1, 0],
+                       [0, 1, 1, 1, 0, 0],
+                       [0, 0, 0, 0, 0, -2]]),
+             np.array([[-2, -2, 0, 0, 0, -2],
+                       [0,  0,  0, 1, 0, 0],
+                       [0,  1, -1, 0, 1, 0],
+                       [0,  1,  0, 0, 1, 0],
+                       [0,  0,  1, 0, 0, 0],
+                       [-2, 0, 0, 0, -2, -2]]),
+             np.array([[0, 0, 0, 0, 0, -2],
+                       [0, 1, 2, 1, 0, 0],
+                       [0, 0, 1, 1, 1, 0],
+                       [-2, 0, 0, 0, 0, 0]]),
+             np.array([[-2, 0,  0, 0, -2, -2],
+                       [0,  0,  1, 0, 0,  0],
+                       [0,  1, -1, 0, 1,  0],
+                       [0,  1,  0, 0, 1,  0],
+                       [0,  0,  0, 1, 0,  0],
+                       [-2, -2, 0, 0, 0, -2]])]
     
     mask_rotations = (1,)  # add 90 degree mask rotation
 
@@ -353,19 +377,19 @@ class Toad(Entity):
         return 0.4 * math.sin(x) ** 2 + 0.3 * math.atan(x)
 
     def get_pitch(self):
-        return int(self.scale.round(100 - 34 * self.ry)) + 3 * (self.mask_match % 2)
+        return int(self.scale.round(100 - 34 * self.ry)) + 3 * (self.mask_match % 2) + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
         self.note = tabla.start_note(self.get_pitch(),
                                      self.get_volume(),
-                                    {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                    {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
 
     def continue_playing(self):
         self.note.end()
         self.time_alive += 1
         self.note = tabla.start_note(self.get_pitch(),
                                      self.get_volume(),
-                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                     {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
     
     def stop_playing(self):
         self.note.end()
@@ -409,12 +433,12 @@ class Glider(Entity):
         self.life_span = FRAMEDUR
  
     def get_pitch(self):
-        return 85 - 30 * self.ry
+        return 85 - 30 * self.ry + GLOBAL_PITCH_SHIFT
 
     def start_playing(self):
         self.sustained_note = ocarina.start_note(self.get_pitch(),
                                                  0.7,
-                                                 {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 2})
+                                                 {"param_pan": self.rx, "param_dist": self.dist_from_scope_center() / 10})
         
     def continue_playing(self):
         self.life_span += FRAMEDUR
@@ -422,7 +446,7 @@ class Glider(Entity):
         if pitch != self.last_pitch:
             self.sustained_note.change_pitch(pitch)
             self.sustained_note.change_parameter("pan", self.rx)
-            self.sustained_note.change_parameter("dist", self.dist_from_scope_center() / 2)
+            self.sustained_note.change_parameter("dist", self.dist_from_scope_center() / 10)
         self.last_pitch = pitch
         
     def stop_playing(self):

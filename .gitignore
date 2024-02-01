@@ -18,3 +18,5 @@ __pycache__/*
 *.flac
 profiling_output.txt
 *.npy
+*.mkv
+*.zip
