@@ -18,7 +18,7 @@ grav_player = s.new_osc_part("gravPlayer", 57120)
 
 bass = s.new_part("acoustic bass")
 
-pop_template_mix = TimeVaryingParameter([0.9, 0.2], [PIECE_DURATION], [-3])
+pop_template_mix = TimeVaryingParameter([1.0, 0.2], [PIECE_DURATION], [2])
 pop_pitch_min = TimeVaryingParameter([40, 40], [PIECE_DURATION])
 pop_pitch_max = TimeVaryingParameter([55, 100], [PIECE_DURATION])
 pop_lengths = TimeVaryingParameter([8, 2], [PIECE_DURATION])
@@ -39,7 +39,6 @@ def get_chord_from_zone(zone):
 
 
 pop_locations = scan_times[local_maxima_indices]
-pop_locations = pop_locations[::2]
 pop_value_range = min(scan_values[local_maxima_indices]), max(scan_values[local_maxima_indices])
 # Map from range of maxima overall to pop_pitch_min(), pop_pitch_max()
 # add a pop timeout?
@@ -49,9 +48,11 @@ def do_pops():
     pop_schedule = []
     polarity = 1  # switch that flips between high and low pops
     for t in pop_locations:
+        if t < pop_lengths_min.value_at(t):
+            continue
         dur = min(t, random.uniform(pop_lengths_min.value_at(t), pop_lengths_max.value_at(t)))
         volume = remap(float(scan_value_at_time(t)), 0.3, 1, pop_value_range[0], pop_value_range[1])
-        pitch = 70 + polarity * remap(float(scan_value_at_time(t)), 0, 25, pop_value_range[0], pop_value_range[1])
+        pitch = (pop_pitch_max() + pop_pitch_min()) / 2 + polarity * remap(float(scan_value_at_time(t)), 0, (pop_pitch_max() - pop_pitch_min()) / 2, pop_value_range[0], pop_value_range[1])
         pop_schedule.append((t - dur, pitch, volume, dur))
         polarity *= -1
     pop_schedule.sort(key=lambda x: x[0])
@@ -127,4 +128,4 @@ fork(do_timpani)
 s.start_transcribing()
 
 wait(PIECE_DURATION)
-s.stop_transcribing().export_to_midi_file("microwaveCelloNoJitter.mid")
+s.stop_transcribing().export_to_midi_file("microwave.mid")
