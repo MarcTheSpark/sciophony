@@ -51,8 +51,12 @@ def do_pops():
         if t < pop_lengths_min.value_at(t):
             continue
         dur = min(t, random.uniform(pop_lengths_min.value_at(t), pop_lengths_max.value_at(t)))
-        volume = remap(float(scan_value_at_time(t)), 0.3, 1, pop_value_range[0], pop_value_range[1])
-        pitch = (pop_pitch_max() + pop_pitch_min()) / 2 + polarity * remap(float(scan_value_at_time(t)), 0, (pop_pitch_max() - pop_pitch_min()) / 2, pop_value_range[0], pop_value_range[1])
+        relative_strength = float(scan_value_at_time(t)) / get_max_value_for_sharpness(sharpness_env.value_at(t))
+        # since it never really gets above 0.5, and sometimes it's negative
+        relative_strength = remap(relative_strength, 0, 1,0, 0.5)
+        pitch = remap(relative_strength, pop_pitch_min.value_at(t), pop_pitch_max.value_at(t), 0, 1)
+        volume = remap(relative_strength, 0.3, 1, 0, 1)
+
         pop_schedule.append((t - dur, pitch, volume, dur))
         polarity *= -1
     pop_schedule.sort(key=lambda x: x[0])
@@ -64,7 +68,8 @@ def do_pops():
                               volume,
                               dur,
                               {"param_backupDur": dur, "param_templateMix": pop_template_mix(),
-                               "param_attackTime": pop_attack_release_time(), "param_decayTime": pop_attack_release_time()},
+                               "param_attackTime": pop_attack_release_time(), "param_decayTime": pop_attack_release_time(),
+                               "param_pan": random.uniform(-0.7, 0.7)},
                               blocking=False)
 
 

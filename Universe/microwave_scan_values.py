@@ -51,7 +51,7 @@ def get_zones(data, zone_boundaries=(5.0, 25, 60, 120, 180, 240)):
     return bin_indices - offset
 
 
-filename = 'scan_values_slowing.npz'
+filename = 'scan_values.npz'
 
 if os.path.exists(filename):
     print("Loading saved values...", end="")
