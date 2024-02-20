@@ -40,4 +40,5 @@ def plot_sequences():
 
 
 if __name__ == "__main__":
+    plot_discovery_curve()
     plot_sequences()

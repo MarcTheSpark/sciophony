@@ -1,0 +1,7 @@
+- Move ensemble to separate file
+- get_volume_sequences could use an envelope; program that
+
+2-16:
+- decrease triangle presence. Give volume adjustments for every percussion instrument. Only play triangle at first.
+- Oboe staccato/legato alternation is nice.  How could we systematize that? Better in different years?
+- Different mixtures of colors in different years?
