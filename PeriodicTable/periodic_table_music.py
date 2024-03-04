@@ -3,43 +3,75 @@ from scamp import *
 import numpy as np
 from scamp_extensions.pitch import Scale
 import random
-
-s = Session()
+import atexit
+from ensemble_midi import *
+from scamp_extensions.process import non_repeating_shuffle
 
 s.tempo = 60
 scale = Scale.from_pitches([62, 66, 69, 70, 72, 73, 74])  # D dom 7 with a Bb and a C# added
-guitar = s.new_part("DistortionGuitar")
-vibes = s.new_part("vibraphone")
-piano = s.new_part("piano")
-bass = s.new_part("Slap Bass")
-cello = s.new_part("Cello")
-oboe = s.new_part("Oboe")
-drums = s.new_part("Orchestra")
-contrabass = s.new_part("Contrabass")
 
-metal_chords = {
-    "metal": [72, 78, 86, 93],
-    "metalloid": [70, 78, 86],
-    "nonmetal": [66, 69, 78, 85]
+metal_pitch_iterators = {  # i.e. which instruments to use on the orchestral percussion
+    "metal": non_repeating_shuffle([77, 80, 81]),
+    "metalloid": non_repeating_shuffle([43, 45, 95]),
+    "nonmetal": non_repeating_shuffle([60, 62, 64])
 }
+
+
+# metal_chords = {
+#    "metal": [72, 78, 86, 93],
+#    "metalloid": [70, 78, 86],
+#    "nonmetal": [66, 69, 78, 85]
+# }
+
+def get_volume_sequence(current_year, active_when_discovered=True, min_volume=0.6, max_volume=1.0):
+    active_sequence_length = None
+    volumes = []
+    for discovery_year in discovery_years:
+        if (discovery_year <= current_year) if active_when_discovered else (discovery_year > current_year):
+            # active
+            if active_sequence_length is None:
+                active_sequence_length = 1
+            else:
+                active_sequence_length += 1
+        else:
+            # not active
+            if active_sequence_length is not None:
+                # went from active to inactive; calculate the block of active elements
+                step_size = (max_volume - min_volume) / (active_sequence_length - 1) if active_sequence_length > 1 \
+                    else (max_volume - min_volume)
+                volumes.extend(min_volume + i * step_size for i in range(active_sequence_length))
+                active_sequence_length = None
+            volumes.append(0)
+    if active_sequence_length is not None:
+        # went from active to inactive; calculate the block of active elements
+        step_size = (max_volume - min_volume) / (active_sequence_length - 1) if active_sequence_length > 1 \
+            else (max_volume - min_volume)
+        volumes.extend(min_volume + i * step_size for i in range(active_sequence_length))
+    return volumes
 
 
 def play_radius_oboe(current_year):
     oboe_note = None
     last_pitch = None
-    for radius, discovery_year in zip(r_radius, discovery_years):
-        if np.isnan(radius) or discovery_year > current_year:
-            if oboe_note:
-                oboe_note.end()
-            last_pitch = oboe_note = None
-            wait(0.25)
-        else:
+    np.array(r_radius)
+    active_array = (~np.isnan(r_radius) & (np.array(discovery_years) <= current_year)).astype(int)
+    staccato_array = np.concatenate([np.diff(active_array) < 0, [True]])
+
+    for active, staccato, radius, discovery_year in zip(active_array, staccato_array, r_radius, discovery_years):
+        if active:
             pitch = scale.round(radius + 3)
             if last_pitch != pitch:
                 if oboe_note:
                     oboe_note.end()
-                oboe_note = oboe.start_note(pitch, 1)
+                props = "param_15: 0.5" if staccato else "param_17: 0.5"
+                oboe_note = oboe.start_note(pitch, 0.6 if staccato else 1, props)
+
             last_pitch = pitch
+            wait(0.25)
+        else:
+            if oboe_note:
+                oboe_note.end()
+            last_pitch = oboe_note = None
             wait(0.25)
     if oboe_note:
         oboe_note.end()
@@ -50,12 +82,15 @@ def play_heat_piano(current_year):
     Playing down the scale on the piano based on specific heat. Does so at double speed with rising gestures.
     :return:
     """
-    for heat, discovery_year in zip(r_heats, discovery_years):
+    for heat, discovery_year, volume in zip(r_heats, discovery_years, get_volume_sequence(current_year)):
         if np.isnan(heat) or discovery_year > current_year:
             wait(0.25)
         else:
-            piano.play_note(scale.round(heat), 1, 0.125)
-            piano.play_note(scale.round(heat + 3), 1, 0.125)
+            degree = round(scale.pitch_to_degree(heat))
+            piano.play_chord(scale[degree, degree + 2], volume + random.uniform(-0.1, 0.1), 0.125,
+                             NotePlaybackAdjustment.scale_params(length=random.uniform(0.5, 0.8)))
+            piano.play_note(scale[degree + 3], volume * 0.8 + random.uniform(-0.1, 0.1), 0.125,
+                            NotePlaybackAdjustment.scale_params(length=random.uniform(0.5, 0.8)))
 
 
 def play_undiscovered(current_year):
@@ -109,9 +144,9 @@ def play_negs_cello(current_year):
         if np.isnan(negs) or discovery_year > current_year:
             wait(0.25)
         else:
-            cello.play_note(scale.round(negs), 1, 1/12)
-            cello.play_note(scale.round(negs + 7), 1, 1/12)
-            cello.play_note(scale.round(negs + 3), 1, 1/12)
+            cello.play_note(scale.round(negs), 1, 1 / 12)
+            cello.play_note(scale.round(negs + 7), 1, 1 / 12)
+            cello.play_note(scale.round(negs + 3), 1, 1 / 12)
 
 
 def play_metal_chords(current_year):
@@ -122,23 +157,22 @@ def play_metal_chords(current_year):
     volume = 1
     for mstate, discovery_year in zip(metalics, discovery_years):
         if mstate != last_state:
-            volume = 1
+            volume = 0.9
         else:
-            if volume == 1:
-                volume = 0.8
+            if volume == 0.9:
+                volume = 0.7
             else:
                 volume *= 0.95
         if discovery_year < current_year:
-            if mstate == 0:
-                # print("metal")
-                for _ in range(2):
-                    vibes.play_chord(metal_chords["metal"], volume, 0.125)
-            elif mstate == 1:
-                # print("metalloid")
-                vibes.play_chord(metal_chords["metalloid"], volume, 0.25)
+            pitch = next(metal_pitch_iterators["metal"]) if mstate == 0 \
+                else next(metal_pitch_iterators["metalloid"]) if mstate == 1 \
+                else next(metal_pitch_iterators["nonmetal"])
+            adjusted_volume = volume * 0.1 if mstate == 0 else volume
+            if random.random() < 0:
+                vibes.play_note(pitch, adjusted_volume, 0.125)
+                vibes.play_note(pitch, adjusted_volume, 0.125)
             else:
-                # print("nonmetal")
-                vibes.play_chord(metal_chords["nonmetal"], volume, 0.25)
+                vibes.play_note(pitch, adjusted_volume, 0.25)
             last_state = mstate
         else:
             wait(0.25)
@@ -153,12 +187,13 @@ def mendeleyev():
 
 
 years_to_play = [1700, 1789, 1820, 1869, 1900, 1970]
-
+years_to_play = years_to_play[1::2]
+atexit.register(lambda: low_held_note.end())
 for year_to_play in years_to_play:
     if year_to_play == 1869:
-        s.fork(mendeleyev)
-    low_held_note = contrabass.start_note(26, 0.5)
+        mendeleyev()
     drums.play_chord([35, 36, 37, 38], 1, 1)
+    low_held_note = contrabass.start_note(26, 0.5)
     wait(1)
     print(f"Current year: {year_to_play}")
     s.fork(play_undiscovered, args=(year_to_play,))
@@ -166,11 +201,10 @@ for year_to_play in years_to_play:
     s.fork(play_metal_chords, args=(year_to_play, ))
     # s.fork(play_boil_bass, args=(year_to_play, ))
     # s.fork(play_negs_cello, args=(year_to_play, ))
-    s.fork(play_radius_oboe, args=(year_to_play, ))
+    s.fork(play_radius_oboe, args=(year_to_play,))
     s.wait_for_children_to_finish()
     low_held_note.end()
 wait_for_children_to_finish()
-
 
 """
 - Weird that metal status and specific heat are the same instrument. (fixed bug)

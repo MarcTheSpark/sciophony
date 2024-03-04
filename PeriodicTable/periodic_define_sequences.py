@@ -12,11 +12,11 @@ radios = get_attribute_sequence("Radioactive")[:99]
 aradius = get_attribute_sequence("AtomicRadius")[:99]
 discovery_years = get_attribute_sequence("Year")[:99]
 
-r_heats = remap(heats, 48, 108, input_warp="exp")
+r_heats = remap(heats, 64, 96, input_warp="exp")
 r_boilings = remap(boilings, 48, 84, output_warp=4)
-r_negs = remap(negs, 48, 84, output_warp=4)
+r_negs = remap(negs, 48, 84)
 r_metalics = remap(metalics, 48, 84)
-r_radius = remap(aradius, 48, 84)
+r_radius = remap(aradius, 84, 48)
 
 nyears = np.array(discovery_years)
 discovery_perc = [sum(nyears < y) / len(nyears) for y in range(1700, 2000)]
@@ -40,5 +40,5 @@ def plot_sequences():
 
 
 if __name__ == "__main__":
-    plot_discovery_curve()
+    # plot_discovery_curve()
     plot_sequences()

@@ -1,0 +1,8 @@
+- Work on Visualization
+- Shaping dynamics of gestures
+- Articulation of cello
+- Sonifying periodic table lines?
+- Cello: Add variation in dynamic: both within the triplet, and phrase shapes. Articulation? Phase start is at the start of a row or discovered block
+- Which years have which properties been discovered?
+- Bass: Do more with volume, Bend up-down, on a high boiling point? Filter for events?
+  Mariano suggests: maybe downsample the pitch to fewer notes? Needs to be a gesture. Could be not using only notes from scale.  Invert, like with radius, since that represents something that’s holding solid or liquid?
