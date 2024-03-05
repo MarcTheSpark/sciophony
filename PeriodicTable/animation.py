@@ -3,6 +3,7 @@ from marciano.periodictable import Element
 import random
 import pyglet
 from pyglet.graphics import Batch
+from periodic_table_music import PTableSonification
 
 # Hyperparameters
 WIDTH, HEIGHT = 1920, 1080
@@ -76,18 +77,31 @@ element_drawables = [ElementDrawables(element) for element in elements]
 
 last = time.time()
 
+sonification = PTableSonification()
+sonification.play()
+
+year_label = pyglet.text.Label(str(sonification.current_year), font_name='Times New Roman', font_size=48, x=WIDTH / 2,
+                               y=0.94 * HEIGHT, color=(255, 255, 255, 255), anchor_x='center', anchor_y='top')
+
+
 @window.event
 def on_draw():
-    global last
-    print(time.time() - last)
-    for ed in element_drawables:
-        if random.random() < 0.3:
+    global last, year_label
+    for i, ed in enumerate(element_drawables):
+        if i + 1 in sonification.elements_played:
             ed.set_visible(True)
         else:
             ed.set_visible(False)
     last = time.time()
     window.clear()
+    if str(sonification.current_year) != year_label.text:
+        year_label = pyglet.text.Label(
+            str(sonification.current_year), font_name='Times New Roman', font_size=48, x=WIDTH / 2,
+            y=0.94 * HEIGHT, color=(255, 255, 255, 255), anchor_x='center', anchor_y='top')
+    year_label.draw()
     batch.draw()  # Draw all elements in the batch
+
+
 
 pyglet.app.run()
 

@@ -28,11 +28,11 @@ def plot_discovery_curve():
 
 
 def plot_sequences():
-    plt.plot(anumbers, r_heats, label="heats")
+    # plt.plot(anumbers, r_heats, label="heats")
     plt.plot(anumbers, r_boilings, label="boiling")
-    plt.plot(anumbers, r_negs, label="Eneg")
-    plt.plot(anumbers, r_radius, label="Radius")
-    plt.plot(anumbers, r_metalics, "o", label="Metal")
+    # plt.plot(anumbers, r_negs, label="Eneg")
+    # plt.plot(anumbers, r_radius, label="Radius")
+    # plt.plot(anumbers, r_metalics, "o", label="Metal")
     which_radios = np.where(np.array(radios) > 0)[0]
     plt.plot(which_radios, np.full(len(which_radios), 45), "*", label="RadioActive")
     plt.legend()
