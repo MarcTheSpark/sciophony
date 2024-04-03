@@ -13,7 +13,7 @@ aradius = get_attribute_sequence("AtomicRadius")[:99]
 discovery_years = get_attribute_sequence("Year")[:99]
 
 r_heats = remap(heats, 64, 96, input_warp="exp")
-r_boilings = remap(boilings, 48, 84, output_warp=4)
+r_boilings = remap(np.log(boilings), 72, 44)
 r_negs = remap(negs, 48, 84)
 r_metalics = remap(metalics, 48, 84)
 r_radius = remap(aradius, 84, 48)
@@ -29,12 +29,12 @@ def plot_discovery_curve():
 
 def plot_sequences():
     # plt.plot(anumbers, r_heats, label="heats")
-    plt.plot(anumbers, r_boilings, label="boiling")
+    plt.plot(anumbers, np.log(boilings), label="boiling")
     # plt.plot(anumbers, r_negs, label="Eneg")
     # plt.plot(anumbers, r_radius, label="Radius")
     # plt.plot(anumbers, r_metalics, "o", label="Metal")
-    which_radios = np.where(np.array(radios) > 0)[0]
-    plt.plot(which_radios, np.full(len(which_radios), 45), "*", label="RadioActive")
+    # which_radios = np.where(np.array(radios) > 0)[0]
+    # plt.plot(which_radios, np.full(len(which_radios), 45), "*", label="RadioActive")
     plt.legend()
     plt.show()
 
