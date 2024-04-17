@@ -19,7 +19,7 @@ ELEMENT_PADDING_X, ELEMENT_PADDING_Y = 10, 10
 TABLE_ORIGIN_X, TABLE_ORIGIN_Y = 140, 50
 LANTHENIDE_ORIGIN_X, LANTHENIDE_ORIGIN_Y = TABLE_ORIGIN_X + 2.7 * (ELEMENT_WIDTH + ELEMENT_PADDING_X), 660
 LEGEND_DIM = 800, 100
-LEGEND_ORIGIN = WIDTH / 2, 40
+LEGEND_ORIGIN = WIDTH / 2, 75
 
 
 def get_element_position(period, group):
@@ -54,7 +54,7 @@ def draw_discrete_legend(batch, center_x, y, width, height, title_font_size, lab
                                   color=(255, 255, 255, 255), batch=batch))
 
     num_labels = len(labels_and_colors)
-    spacing = 100  # Space between patches
+    spacing = 10  # Space between patches
 
     # Calculate size of each square patch
     # Assuming equal space for each label, adjust based on your application's specifics
@@ -62,8 +62,6 @@ def draw_discrete_legend(batch, center_x, y, width, height, title_font_size, lab
     total_label_width = sum([Label(text, font_size=label_font_size).content_width for text, _ in labels_and_colors])
     available_width_for_squares = width - total_spacing - total_label_width
     square_size = min(height*0.5, available_width_for_squares / num_labels)  # Each square's side length
-    x -= square_size / 2
-    x -= Label(labels_and_colors[-1][0], font_size=label_font_size).content_width / 2
     square_spacing_size = width / num_labels
 
     patch_x = x
@@ -71,7 +69,8 @@ def draw_discrete_legend(batch, center_x, y, width, height, title_font_size, lab
         # Draw color patch as a square
         draw_color_patch(batch, patch_x, y + height / 2 - square_size / 2, square_size, square_size, color)
 
-        label = Label(label_text, font_size=label_font_size)
+        # Calculate the width of the label to adjust the position of the next color patch correctly
+        label_width = Label(label_text, font_size=label_font_size).content_width
         label_x = patch_x + square_size + patch_label_padding
 
         # Draw label on the same row as the square
@@ -80,7 +79,7 @@ def draw_discrete_legend(batch, center_x, y, width, height, title_font_size, lab
                                       color=(255, 255, 255, 255), batch=batch))
 
         # Update patch_x for the next square-label pair, including space for the label
-        patch_x += square_spacing_size + spacing  # Adjust spacing as needed
+        patch_x += square_spacing_size + label_width + spacing  # Adjust spacing as needed
 
 
 def draw_color_patch(batch, x, y, width, height, color):
@@ -113,10 +112,10 @@ def draw_legend(batch, center_x, y, width, height, title_font_size, label_font_s
 
     # Draw labels
     legend_drawables.append(Label(label_low, font_name='Times New Roman', font_size=label_font_size,
-                      x=x - 20, y=label_y, anchor_x='right', anchor_y='baseline',
+                      x=x - 10, y=label_y, anchor_x='right', anchor_y='baseline',
                       color=(255, 255, 255, 255), batch=batch))
     legend_drawables.append(Label(label_high, font_name='Times New Roman', font_size=label_font_size,
-                       x=x + width + 20, y=label_y, anchor_x='left', anchor_y='baseline',
+                       x=x + width + 10, y=label_y, anchor_x='left', anchor_y='baseline',
                        color=(255, 255, 255, 255), batch=batch))
 
 
@@ -157,22 +156,26 @@ class ElementDrawables:
         x, y = self.x, self.y
         w, h = self.width, self.height
         adjusted_y = HEIGHT - y - h
-        rectangle = pyglet.shapes.Rectangle(x, adjusted_y, w, h, color=(50, 50, 250),
+        rectangle1 = pyglet.shapes.Rectangle(x, adjusted_y, w, h, color=(240, 240, 240),
+                                            batch=batch)
+        rectangle2 = pyglet.shapes.Rectangle(x+5, adjusted_y+5, w-10, h-10, color=(0, 0, 0),
                                             batch=batch)
         label_symbol = pyglet.text.Label(self.element.symbol,
                                          font_name='Times New Roman',
                                          font_size=self.main_font_size,
                                          x=x + w / 2, y=adjusted_y + h / 2,
                                          anchor_x='center', anchor_y='center',
+                                         color=(240, 240, 240, 255),
                                          batch=batch)
         label_mass = pyglet.text.Label(str(self.element.atomic_mass),
                                        font_name='Times New Roman',
                                        font_size=self.small_font_size,
                                        x=x + 0.12 * w, y=adjusted_y + h - 0.12 * h * 0.3,
                                        anchor_x='left', anchor_y='top',
+                                       color=(240, 240, 240, 255),
                                        batch=batch)
 
-        return rectangle, label_symbol, label_mass
+        return rectangle1, rectangle2, label_symbol, label_mass
 
     def set_visible(self, visible):
         for drawable in self.drawables:
@@ -187,14 +190,14 @@ class ElementDrawables:
 
 
 # Pre-create drawable objects for all elements
-element_drawables = [ElementDrawables(element) for element in elements]
+element_drawables = [ElementDrawables(element, (650, 170), (620, 740), 270, 60) for element in elements]
 
 last = time.time()
 
-years = (1669, 1789, 1820, 1869, 1932, 1945, 1986)
-sonification = PTableSonification()
+years = (1700, 1789, 1820, 1869, 1932, 1945, 1986)
+sonification = PTableSonification([2000])
 # sonification.play(midi=True)
-def start_sonification(dt): sonification.play(midi=True)
+start_sonification = lambda dt: sonification.play(midi=True)
 
 year_label = None
 
@@ -223,32 +226,31 @@ def new_year(current_year):
 
     if current_year <= 1700:
         set_discrete_element_colors(metalics, value_colors={0: (230, 232, 250), 1: (120, 199, 199), 2: (195, 98, 65)})
-        draw_discrete_legend(batch, LEGEND_ORIGIN[0] + 2, LEGEND_ORIGIN[1], LEGEND_DIM[0] * 0.7, LEGEND_DIM[1], 25, 14,
+        draw_discrete_legend(batch, *LEGEND_ORIGIN, LEGEND_DIM[0] * 0.7, LEGEND_DIM[1], 25, 14,
                              (("Metal", (230, 232, 250)), ("Metalloid", (120, 199, 199)), ("Non-metal", (195, 98, 65))),
-                             title="")
+                             title="Metallic Character")
     elif current_year <= 1789:
         set_element_colors(boilings, (0, 0, 200), (255, 60, 0))
-        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="", label_low="Low Boiling Point", label_high="High Boiling Point")
+        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="Boiling Point")
     elif current_year <= 1820:
         set_element_colors(r_heats, (0, 0, 200), (255, 60, 0))
-        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="",
-                    label_low="Low Specific Heat", label_high="High Specific Heat")
+        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="Specific Heat",
+                    label_low="Low", label_high="High")
     elif current_year <= 1869:
         set_element_colors(aradius, (0, 0, 200), (255, 60, 0))
-        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="", label_low="Small Radius", label_high="Large Radius")
+        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="Atomic Radius", label_low="Small", label_high="Large")
     elif current_year <= 1932:
         set_element_colors(negs, (0, 0, 200), (255, 60, 0))
-        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="",
-                    label_low="Less Electronegative", label_high="More Electronegative")
-
+        draw_legend(batch, *LEGEND_ORIGIN, *LEGEND_DIM, 25, 14, (0, 0, 200), (255, 60, 0), title="Electronegativity",
+                    label_low="Small", label_high="Large")
     else:
         set_discrete_element_colors(radios, value_colors={False: (20, 20, 20), True: (255, 255, 0)})
-        draw_discrete_legend(batch, LEGEND_ORIGIN[0] + 110, LEGEND_ORIGIN[1], LEGEND_DIM[0] * 0.6, LEGEND_DIM[1], 25, 14,
+        draw_discrete_legend(batch, *LEGEND_ORIGIN, LEGEND_DIM[0] * 0.6, LEGEND_DIM[1], 25, 14,
                              (("Radioactive", (255, 255, 0)), ("Non-radioactive", (20, 20, 20))),
-                             title="")
+                             title="Radioactivity")
 
 
-new_year(sonification.current_year)
+# new_year(sonification.current_year)
 
 
 @window.event
@@ -256,16 +258,19 @@ def on_draw():
     global last, year_label
     last = time.time()
     window.clear()
-    if str(sonification.current_year) != year_label.text:
-        new_year(sonification.current_year)
+    # if str(sonification.current_year) != year_label.text:
+    #     new_year(sonification.current_year)
+
     for i, ed in enumerate(element_drawables):
-        if i + 1 in sonification.elements_played:
-            ed.set_visible(True)
-        else:
-            ed.set_visible(False)
-    year_label.draw()
+        ed.set_visible(False)
+        # if i + 1 in sonification.elements_played:
+        #     ed.set_visible(True)
+        # else:
+        #     ed.set_visible(False)
+    element_drawables[0].set_visible(True)
+    # year_label.draw()
     batch.draw()  # Draw all elements in the batch
 
 
-pyglet.clock.schedule_once(start_sonification, 0.1)
+pyglet.clock.schedule_once(start_sonification, 0)
 pyglet.app.run()

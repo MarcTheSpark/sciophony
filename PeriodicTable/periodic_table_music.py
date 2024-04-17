@@ -13,7 +13,7 @@ from scamp_extensions.process import non_repeating_shuffle
 
 class PTableSonification:
 
-    def __init__(self, years_to_play=(1700, 1789, 1820, 1869, 1932, 1986), scale=Scale.from_pitches([62, 66, 69, 70, 72, 73, 74])):
+    def __init__(self, years_to_play=(1669, 1789, 1820, 1869, 1932, 1945, 1986), scale=Scale.from_pitches([62, 66, 69, 70, 72, 73, 74])):
 
         self.years_to_play = years_to_play
         self.scale = scale
@@ -136,8 +136,11 @@ class PTableSonification:
         return volumes
 
     def play_radius_oboe(self, current_year, is_solo=False):
-
-        active_array = (~np.isnan(r_radius) & (np.array(discovery_years) <= current_year)).astype(int)
+        r_radius_array = np.array(r_radius)
+        active_array = (~np.isnan(r_radius_array) & (np.array(discovery_years) <= current_year)).astype(int)
+        if not is_solo:
+            active_array &= np.array(r_radius_array) < 72
+            r_radius_array += 12
         volumes = self.get_phrase_volumes(current_year, Envelope([0.4, 0.9], [1], [2]),
                                           2, singleton_volume_choice="end")
 
@@ -146,7 +149,7 @@ class PTableSonification:
 
 
         # pre-build notes list
-        for radius, is_active, volume in zip(r_radius, active_array, volumes):
+        for radius, is_active, volume in zip(r_radius_array, active_array, volumes):
             if is_active:
                 pitch = self.scale.round(radius + 3)
                 if current_dur > 0 and current_pitch is not None:
@@ -196,7 +199,10 @@ class PTableSonification:
         Playing down the scale on the piano based on specific heat. Does so at double speed with rising gestures.
         :return:
         """
-        NUM_REPEATS_WHEN_COMPING = 2
+        if not is_solo:
+            self.play_heat_piano_comping(current_year)
+            return
+        NUM_REPEATS_WHEN_COMPING = 1
         COMP_REPEAT_DECAY = 0.7
         repeats_left = NUM_REPEATS_WHEN_COMPING
 
@@ -220,6 +226,57 @@ class PTableSonification:
                 else:
                     wait(0.25)
                 last_degree = degree
+
+    def play_heat_piano_comping(self, current_year):
+        """
+        Playing down the scale on the piano based on specific heat. Does so at double speed with rising gestures.
+        :return:
+        """
+
+        hyv = list(zip(r_heats, discovery_years, self.get_volume_sequence(current_year, min_volume=0.4, max_volume=0.6)))
+        skip_counter = 0
+        for i, (heat, discovery_year, volume) in enumerate(hyv):
+            if np.isnan(heat) or discovery_year > current_year:
+                wait(0.25)
+            elif skip_counter > 0:
+                skip_counter -= 1
+                wait(0.25)
+            else:
+                how_long_same_degree = 1
+                degree = round(self.scale.pitch_to_degree(heat))
+                for h, y, v in hyv[i + 1:]:
+                    if np.isnan(h) or y > current_year:
+                        break
+                    d = round(self.scale.pitch_to_degree(h))
+                    if d != degree:
+                        break
+                    how_long_same_degree += 1
+
+                if how_long_same_degree == 1:
+                    self.piano.play_chord(self.scale[degree - 4, degree, degree + 2], volume + random.uniform(-0.1, 0.1), 0.125)
+                    wait(0.125)
+                else:
+                    self.s.fork(
+                        PTableSonification._roll_chord,
+                        (self.piano,
+                         self.scale[degree - 4, degree, degree + 2],
+                         volume,
+                         0.25 * how_long_same_degree - 0.125)
+                    )
+                    skip_counter = how_long_same_degree - 1
+                    wait(0.25)
+
+    @staticmethod
+    def _roll_chord(inst: ScampInstrument, chord, volume, length, spacing=0.06, humanization=0.1):
+        length_left = length
+        for chord_note in chord:
+            volume = volume * 2 ** random.uniform(-humanization, humanization)
+
+            inst.play_note(chord_note, volume, length_left, blocking=False)
+            wait_dur = spacing * 2 ** random.uniform(-humanization, humanization)
+            wait(wait_dur)
+            length_left -= wait_dur
+        wait_for_children_to_finish()
 
     def play_undiscovered(self, current_year):
         """
@@ -277,24 +334,34 @@ class PTableSonification:
                 wait(0.25)
             else:
                 pitch = self.scale.round(boil)
+                if not is_solo:
+                    volume *= 0.7
                 max_dur -= 0.25  # allow space between the groups
-                if max_dur > 0.25:
-                    embellished_pitch = pitch + (up_down if last_pitch > pitch else fall) if pitch > 45 else pitch
-                    self.bass.play_note(embellished_pitch, volume, min(0.75, max_dur), blocking=False)
+                if max_dur > 0.25:  # long note at the end of a group of active notes
+                    if is_solo:
+                        # when solo, do a long embellished pitch
+                        embellished_pitch = pitch + (up_down if last_pitch > pitch else fall) if pitch > 45 else pitch
+                        self.bass.play_note(embellished_pitch, volume, min(0.75, max_dur), blocking=False)
+
+                    else:
+                        # when not solo, do a medium-short, falling note (not the other more active up_down)
+                        self.bass.play_note(pitch +fall if pitch > 45 else pitch, volume, 0.5, blocking=False)
+                        pass
                     wait(0.25)
-                elif is_solo or abs(pitch - last_pitch) > 1:  # el.group in (1, 3, 13, 18):
+                    last_pitch = pitch
+                elif is_solo or abs(pitch - last_pitch) > 4:  # el.group in (1, 3, 13, 18):
                     # self.bass.play_note(pitch, volume, 0.25, "staccato")
                     self.bass.play_note(pitch, volume, 0.125)
                     wait(0.125)
+                    last_pitch = pitch
                 else:
                     wait(0.25)
                     continue
-                last_pitch = pitch
 
     def play_negs_cello(self, current_year, is_solo=False):
         """Plays triplets based on electronegativity"""
         volumes = PTableSonification.get_phrase_volumes(current_year, Envelope([0.7, 1, 0.5], [1, 2]),
-                                                        num_false_to_end_phrase=2)
+                                                        num_false_to_end_phrase=1)
         self.cello.send_midi_cc(15, 0.5)
 
         for neg, next_neg, volume, next_volume in zip_longest(r_negs, r_negs[1:], volumes, volumes[1:]):
@@ -306,22 +373,26 @@ class PTableSonification:
                 self.cello.play_note(self.scale.round(neg), min(1, volume * 1.3), 1 / 4)
             else:
                 if is_solo or abs(next_neg - neg) > 5:
-                    self.cello.play_note(self.scale.round(neg), volume, 1 / 12, "length * 1.2")
-                    self.cello.play_note(self.scale.round(neg + 7), volume * 0.6, 1 / 12, "length * 1.2")
-                    self.cello.play_note(self.scale.round(neg + 3), volume * 0.8, 1 / 12, "length * 0.7")
+                    self.cello.play_note(self.scale.round(neg), volume, 1 / 12 * 1.2, blocking=False)
+                    wait(1/12)
+                    self.cello.play_note(self.scale.round(neg + 7), volume * 0.6, 1 / 12 * 1.2, blocking=False)
+                    wait(1 / 12)
+                    self.cello.play_note(self.scale.round(neg + 3), volume * 0.8, 1 / 12 * 0.7, blocking=False)
+                    wait(1 / 12)
                 else:
                     self.cello.play_note(self.scale.round(neg), volume, 1 / 4)
 
-    def play_synth_radioactive(self, current_year):
+    def play_synth_radioactive(self, current_year, is_solo=False):
         """Plays Big Synth hits on radioactive elements"""
         pitch_it = non_repeating_shuffle([62, 62, 65, 65])
-        for radioactive in radios:
-            if radioactive:
-                self.synth.play_note(next(pitch_it), 1, 0.25, "staccato")
+        for radioactive, discovered in zip(radios, discovery_years):
+            if radioactive and current_year >= discovered:
+                self.synth.play_note(next(pitch_it), 1 if is_solo else 0.5, 0.125)
+                wait(0.125)
             else:
                 wait(0.25)
 
-    def play_metal_chords(self, current_year, is_solo=False):
+    def play_metals(self, current_year, is_solo=False):
         """
         Plays different chords based on metal status of the element. (and a double chord if metal)
         """
@@ -364,6 +435,7 @@ class PTableSonification:
 
     def main(self):
         atexit.register(lambda: low_held_note.end())
+        wait(0.5)
         for year_to_play in self.years_to_play:
             self.current_year = year_to_play
             self.elements_played = []
@@ -376,17 +448,17 @@ class PTableSonification:
             wait(1)
             print(f"Current year: {year_to_play}")
             self.s.fork(self.play_undiscovered, args=(year_to_play,))
-            self.s.fork(self.play_metal_chords, args=(year_to_play, year_to_play == 1700))
-            if year_to_play > 1700:
-                self.s.fork(self.play_boil_bass, args=(year_to_play, year_to_play == 1789))
+            self.s.fork(self.play_metals, args=(year_to_play, year_to_play == 1669 or year_to_play > 1960))
+            if year_to_play > 1669:
+                self.s.fork(self.play_boil_bass, args=(year_to_play, year_to_play == 1789 or year_to_play > 1960))
             if year_to_play > 1789:
-                self.s.fork(self.play_heat_piano, args=(year_to_play, year_to_play == 1820))
+                self.s.fork(self.play_heat_piano, args=(year_to_play, year_to_play == 1820 or year_to_play > 1960))
             if year_to_play > 1820:
-                self.s.fork(self.play_radius_oboe, args=(year_to_play, year_to_play == 1869))
+                self.s.fork(self.play_radius_oboe, args=(year_to_play, year_to_play == 1869 or year_to_play > 1960))
             if year_to_play > 1930:
-                self.s.fork(self.play_negs_cello, args=(year_to_play, year_to_play == 1932))
-            if year_to_play > 1950:
-                self.s.fork(self.play_synth_radioactive, args=(year_to_play, ))
+                self.s.fork(self.play_negs_cello, args=(year_to_play, year_to_play == 1932 or year_to_play > 1960))
+            if year_to_play > 1940:
+                self.s.fork(self.play_synth_radioactive, args=(year_to_play, year_to_play == 1945))
 
             self.s.wait_for_children_to_finish()
             low_held_note.end()
@@ -398,11 +470,3 @@ if __name__ == "__main__":
     sonification.play(midi=True)
     while True:
         time.sleep(0.2)
-
-"""
-- Weird that metal status and specific heat are the same instrument. (fixed bug)
-- Should harmony be so static?
-- Slap bass boiling point stuff incorporates metals meaninglessly?
-- Work on the melodic profile of the different parts so that they don't do so many repeated notes. E.g. the oboe? Make
-the performance more expressive? May it hold, when it's the same note?
-"""
