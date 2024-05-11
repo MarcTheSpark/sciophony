@@ -12,18 +12,17 @@ from scamp_extensions.pitch import Scale
 from utility_funcs import sort_by_frequency
 from sequence_definitions import A319419
 import itertools
-playback_settings.recording_file_path = "old/binary_sequence.wav"
 
+# playback_settings.recording_file_path = "binary_sequence_slow.wav"
+    
 s = Session()
 
+s.timing_policy = "absolute"
 s.tempo = 120
 bass = s.new_part("slap bass")
-piano_treble = s.new_part("Piano", clef_preference="treble")
-piano_bass = s.new_part("Piano", clef_preference="bass")
-drums1 = s.new_part("Closed Hi-Hat", preset="POWER")
-drums2 = s.new_part("Rim Click", preset="POWER")
-drums3 = s.new_part("Wood Block", preset="POWER")
-drums5 = s.new_part("", "POWER")
+piano = s.new_part("Piano")
+drums = s.new_part("POWER")
+clarinet = s.new_part("Clarinet")
 
 #piano=s.new_midi_part("Piano","IAC Driver Bus 1")
 #bass=s.new_midi_part("slap bass","IAC Driver Bus 2")
@@ -31,6 +30,7 @@ drums5 = s.new_part("", "POWER")
 
 
 blues_scale = Scale.blues(42)
+interpolated_blues_scale = Scale.from_pitches([42, 44, 45, 47, 48, 49, 50, 52, 54])
 
 milonga_volume_loop = [1, 0.5, 0.5, 1, 0.5, 0.5, 1, 0.5]
 
@@ -46,7 +46,7 @@ class SequencePlayer:
     scale: Scale = Scale.chromatic(60)
     play_condition: Callable[[int, int], bool] = lambda n, x: True
     scale_degree_function: Callable[[int, int], float] = lambda n, x: x
-    pitch_transformation: Callable[[int, int], float] = lambda n, p: p if p < 108 else None
+    pitch_transformation: Callable[[int, int], float] = lambda n, p: p if p < 108 else p - 12 if p < 120 else None
 
     def play(self):
         indices = (range(self.start_n, self.stop_n) if self.stop_n else itertools.count(self.start_n))
@@ -55,36 +55,37 @@ class SequencePlayer:
             if self.play_condition(n, x):
                 scale_degree = self.scale_degree_function(n, x)
                 pitch = self.pitch_transformation(n, self.scale[scale_degree])
-                props = ["accent"] if volume > 0.8 else []
-                if pitch is not None :
-                    if pitch > 103:
-                        pitch -= 24
-                        props.append("15va")
-                    elif pitch > 90:
-                        pitch -= 12
-                        props.append("8va")
-                self.inst.play_note(pitch, volume, duration, props)
+                self.inst.play_note(pitch, volume, duration)
             else:
                 wait(duration)
 
 
+NUM_POWERS_OF_2 = 12
+
+
+def pow2_reverse_indices(pow2):
+    yield 0
+    for k in range(pow2):
+        yield from range(2 ** k, 2 ** (k + 1))
+    for k in reversed(range(pow2 - 1)):
+        yield from range(2 ** k, 2 ** (k + 1))
+    yield 0
+
+
+reversed_indices = list(pow2_reverse_indices(NUM_POWERS_OF_2))
+
+
+def A319419_symmetry(n):
+    return A319419(reversed_indices[n])
+
+
 main_sequence_player = SequencePlayer(
-    piano_bass, A319419, milonga_volume_loop, [1/4],
-    scale=blues_scale
-)
-main_sequence_player_bass = SequencePlayer(
-    piano_bass, A319419, milonga_volume_loop, [1/4],
+    piano, A319419_symmetry, milonga_volume_loop, [1/4],
     scale=blues_scale,
-    play_condition=lambda n, x: x < 10
-)
-main_sequence_player_treble = SequencePlayer(
-    piano_treble, A319419, milonga_volume_loop, [1/4],
-    play_condition=lambda n, x: x >= 10,
-    scale=blues_scale
 )
 high_beats = dataclasses.replace(
     main_sequence_player,
-    inst=drums1,
+    inst=drums,
     volumes=[1],
     play_condition=lambda n, x: x > 10,
     pitch_transformation=lambda n, p: 42
@@ -92,19 +93,17 @@ high_beats = dataclasses.replace(
 multiples_of_2 = dataclasses.replace(
     main_sequence_player,
     volumes=[1],
-    inst=drums2,
+    inst=drums,
     pitch_transformation=lambda n, p: 33,
     play_condition=lambda n, x: x > 0 and x % 2 == 0
 )
 multiples_of_5 = dataclasses.replace(
     multiples_of_2,
-    inst=drums3,
     play_condition=lambda n, x: x > 0 and x % 5 == 0,
     pitch_transformation=lambda n, p: 76
 )
 multiples_of_7 = dataclasses.replace(
     multiples_of_5,
-    inst=drums3,
     play_condition=lambda n, x: x > 0 and x % 7 == 0
 )
 intro = dataclasses.replace(
@@ -128,41 +127,69 @@ def play_bass_line(inst, sequence, scale):
 
 def play_clicks(n):
     for i in range(n):
-        drums1.play_note(42, 2, 1)
+        drums.play_note(42, 2, 1)
 
 
 def introduce_new_cycles():
-    for i in itertools.count():
+    for i in pow2_reverse_indices(NUM_POWERS_OF_2):
         binary = str(bin(i)[2:])
         if binary.startswith('111') and len(binary) > 4:
             count_up = int(binary[3:], 2)
             volume = (count_up / int((len(binary) - 3) * '1', 2)) * 0.5 + 0.5
-            pitch = 50 + 3 * count_up % 31 % 19 % 11 % 7 % 5
-            # written_pitch = [64, 67, 71, 74, 77][count_up % 31 % 19 % 11 % 7 % 5]
-            drums5.play_note(pitch, volume, 0.25)
-            # drums5.play_note(written_pitch, volume, 0.25, f"pitch = {pitch}")
+            drums.play_note(50 + count_up % 31 % 19 % 11 % 7 % 5, volume, 0.25)
         elif i == 0 or i >= 16 and math.log2(i) == int(math.log2(i)):
-            drums5.play_note(49, 1, 2, "accent", blocking=False)
+            drums.play_note(49, 1, 2, blocking=False)
             wait(0.25)
         else:
             wait(0.25)
 
+#
+# def random_melody_player():
+#     start_range = random.randint(50, 82)
+#     end_range = random.randint(start_range + 5, min(91, start_range + 15))
+#
+#     return MelodySequencePlayer(
+#         clarinet,
+#         A319419,
+#         (start_range, end_range),
+#         ~ModCondition(x := random.randint(2, 13), x - 1) & ~ModCondition(x := random.randint(2, 13), x - 1),
+#         ModCondition(random.randint(2, 10), 1) | ~ModCondition(random.randint(2, 10), 1),
+#         interval_choices=(-3, -1, 2, 5),
+#         #scale=Scale.blues(42),
+#         rounding_scale=interpolated_blues_scale,
+#     )
+# melody = MelodySequencePlayer(
+#     clarinet,
+#     A319419,
+#     (81, 91),
+#     ~ModCondition(8, 7),
+#     ModCondition(2, 1) | ~ModCondition(3, 1),
+#     interval_choices=(-3, -1, 2, 5),
+#     #scale=Scale.blues(42),
+#     rounding_scale=interpolated_blues_scale,
+# )
 
-s.start_transcribing()
-s.fast_forward()
-intro.play()
-play_clicks(4)
+# melodies = [random_melody_player() for _ in range(5)]
+
+
+# intro.play()
+# play_clicks(4)
 fork(introduce_new_cycles)
-# fork(multiples_of_2.play)
-# fork(multiples_of_5.play)
-# fork(multiples_of_7.play)
-# fork(high_beats.play)
-# s.start_transcribing([piano_treble, piano_bass])
-# fork(main_sequence_player_bass.play)
-# fork(main_sequence_player_treble.play)
-fork(play_bass_line, args=(bass, A319419, blues_scale))
-wait(600, units="time")
-score = s.stop_transcribing().to_score(time_signature=["2/4"] * 4 + ["3/4"] + ["2/4", "2/4", "3/8", "2/4"])
-score.export_music_xml("Notation/BluesSequenceMilonga3.musicxml")
-# wait_for_children_to_finish()
+fork(multiples_of_2.play)
+fork(multiples_of_5.play)
+fork(multiples_of_7.play)
+fork(high_beats.play)
+fork(main_sequence_player.play)
+# for melody in melodies:
+#     fork(melody.play)
+fork(play_bass_line, args=(bass, A319419_symmetry, blues_scale))
+wait_for_children_to_finish()
 
+
+
+# Try the opening loop of pitches, but with duration defined by the bassline thing?
+# Iso-rhythm style?
+# Play with chunks of the opening melody!
+# Could be echoing the sequence in the piano
+# Operations of translation and stretching
+# Could try filtered parts of the piano melody according to pitch.

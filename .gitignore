@@ -20,3 +20,7 @@ profiling_output.txt
 *.npy
 *.mkv
 *.zip
+*.logicx
+*.mov
+*.m4v
+*.pdf

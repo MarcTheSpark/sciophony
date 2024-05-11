@@ -19,4 +19,4 @@ def A319419_generator(start_n, stop_n=None):
 
 
 if __name__ == '__main__':
-    print([A319419(i) for i in range(100)])
+    print([A319419(i) + 1 for i in range(100)])
