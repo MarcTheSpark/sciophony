@@ -12,12 +12,14 @@ import math
 # subsequent runs: load the precalculated solarSystem model from memory
 ss = SolarSystem.load_from_npy("solarSystemModel.npz")
 
-DAYS_PER_BEAT = 90
+DAYS_PER_BEAT = 200
 SAMPLE_DURATION = 0.1
 
 
-def ss_now():
-    return ss[current_clock().master.beat() * DAYS_PER_BEAT]
+def get_solar_system_state(beat=None):
+    if beat is None:
+        beat = current_clock().master.beat()
+    return ss[beat * DAYS_PER_BEAT]
 
 
 max_planet_speeds = {
@@ -105,7 +107,7 @@ planet_days_revolution = {
 def play_planet(which_planet, pitch_base, pitch_range, volume_scale, sampling_rate, sampling_phase, inst,
                 angle_filter=math.pi, sample_duration=0.1):
     for i in itertools.count():
-        snapshot = ss_now()
+        snapshot = get_solar_system_state()
         x, y, z = snapshot.get_position(which_planet)
         vx,vy,vz = snapshot.get_velocity(which_planet)
         angle_earth = snapshot.get_angle("earth")
@@ -133,10 +135,10 @@ def play_planet(which_planet, pitch_base, pitch_range, volume_scale, sampling_ra
 
 def play_planet_revolution_beat(planet_name, pitch, volume, note_dur, inst, sample_duration=0.1):
     """Bases it on crossing the angle zero instead of time since the start"""
-    last_angle = ss_now().get_angle(planet_name)
+    last_angle = get_solar_system_state().get_angle(planet_name)
     while True:
         wait(sample_duration)
-        this_angle = ss_now().get_angle(planet_name)
+        this_angle = get_solar_system_state().get_angle(planet_name)
         if this_angle > 0 and last_angle <= 0:
             inst.play_note(pitch, volume, note_dur, blocking=False)
         last_angle = this_angle
@@ -157,8 +159,8 @@ def play_planet_proximity_alert(planet_1, planet_2, distance_threshold, pitch, i
     distance_threshold = remap(distance_threshold, min_planet_pair_distances[planet_pair],
                                max_planet_pair_distances[planet_pair], 0, 1)
     while True:
-        x1, y1, z1 = ss_now().get_position(planet_1)
-        x2, y2, z2 = ss_now().get_position(planet_2)
+        x1, y1, z1 = get_solar_system_state().get_position(planet_1)
+        x2, y2, z2 = get_solar_system_state().get_position(planet_2)
         d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
         if d < distance_threshold:
             inst.play_note(pitch, remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]), sample_duration / 2)

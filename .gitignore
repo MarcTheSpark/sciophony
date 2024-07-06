@@ -24,3 +24,4 @@ profiling_output.txt
 *.mov
 *.m4v
 *.pdf
+*.svg
