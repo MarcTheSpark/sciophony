@@ -7,9 +7,9 @@ things, or on different visibilities of the sky on cloudy/clear days.
 - Make it so that the percussion of play revolution beat can play on multiple angle triggers
 TODO: Visualize?
 """
-
+import math
 from scamp import *
-from solar_system_functions import ss, play_planet, planet_pitch_base, play_planet_revolution_beat, play_planet_proximity_alert
+from solar_system_functions import OrbitMelody, OrbitBeat, ProximityAlert
 import threading
 
 
@@ -19,6 +19,9 @@ class PlanetMusic(threading.Thread):
         super().__init__(daemon=True)
         self.s: Session = None
         self.started = threading.Condition()
+        self.orbit_melodies = []
+        self.orbit_beats = []
+        self.proximity_alerts = []
 
     def run(self):
         self.s = Session()
@@ -37,22 +40,31 @@ class PlanetMusic(threading.Thread):
         dguitar = self.s.new_part("DistortionGuitar")
         drums = self.s.new_part("POWER")
 
-        self.s.fork(play_planet_proximity_alert, args=("earth", "mars", 0.4, 67, drums))
-        self.s.fork(play_planet_proximity_alert, args=("mercury", "venus", 0.3, 66, drums))
-        self.s.fork(play_planet, args=("neptune", planet_pitch_base["neptune"], 20, 3, 17, 0, neptune_inst))
-        self.s.fork(play_planet, args=("neptune", planet_pitch_base["neptune"], 20, 3, 17, 0, neptune_inst))
-        self.s.fork(play_planet, args=("uranus", planet_pitch_base["uranus"], 20, 3, 11, 4, uranus_inst))
-        self.s.fork(play_planet, args=("saturn", planet_pitch_base["saturn"], 20, 3, 7, 1, saturn_inst))
-        self.s.fork(play_planet, args=("jupiter", planet_pitch_base["jupiter"], 20, 1, 4, 1, jupiter_inst))
-        self.s.fork(play_planet, args=("mars", planet_pitch_base["mars"], 20, 0.6, 3, 0, mars_inst))
-        self.s.fork(play_planet, args=("earth", planet_pitch_base["earth"], 20, 0.2, 1, 0, earth_inst))
-        self.s.fork(play_planet, args=("venus", planet_pitch_base["venus"], 20, 0.3, 1, 0, venus_inst))
-        self.s.fork(play_planet, args=("mercury", planet_pitch_base["mercury"], 12, 0.5, 1, 0, mercury_inst))
+        self.orbit_beats.extend([
+            OrbitBeat(drums, "mercury", 75, 1, 0.1),
+            OrbitBeat(drums, "venus", 73, 1, 0.1, play_angles=(0, math.pi / 2)),
+            OrbitBeat(drums, "earth", 39, 1, 0.1, play_angles=(0, math.pi)),
+            OrbitBeat(drums, "mars", 63, 1, 0.1, play_angles=(0, 2 / 3 * math.tau))
+        ])
 
-        self.s.fork(play_planet_revolution_beat, args=("mercury", 75, 1, 0.1, drums))
-        self.s.fork(play_planet_revolution_beat, args=("venus", 73, 1, 0.1, drums))
-        self.s.fork(play_planet_revolution_beat, args=("earth", 39, 1, 0.1, drums))
-        self.s.fork(play_planet_revolution_beat, args=("mars", 63, 1, 0.1, drums))
+        self.proximity_alerts.extend([
+            ProximityAlert(drums, "earth", "mars", 0.4, 67),
+            ProximityAlert(drums, "mercury", "venus", 0.3, 66),
+        ])
+
+        self.orbit_melodies.extend([
+            OrbitMelody(mercury_inst, "mercury", 1, 0, volume_scale=0.5, sample_duration=0.05),
+            OrbitMelody(venus_inst, "venus", 1, 0, volume_scale=0.3),
+            OrbitMelody(earth_inst, "earth", 1, 0, volume_scale=0.2),
+            OrbitMelody(mars_inst, "mars", 3, 0, volume_scale=0.6),
+            OrbitMelody(jupiter_inst, "jupiter", 4, 1),
+            OrbitMelody(saturn_inst, "saturn", 7, 1),
+            OrbitMelody(uranus_inst, "uranus", 11, 4),
+            OrbitMelody(neptune_inst, "neptune", 17, 0),
+        ])
+
+        for process in self.orbit_melodies + self.orbit_beats + self.proximity_alerts:
+            self.s.fork(process.play)
 
         with self.started:
             self.started.notify_all()

@@ -1,3 +1,6 @@
+import dataclasses
+from typing import Sequence
+
 from marciano.solar_system_model2 import SolarSystem
 import itertools
 from scamp import *
@@ -81,15 +84,26 @@ planet_average_distances = {
     "neptune": 30.0
 }
 
-planet_pitch_base = {
-    "mercury": 120,
-    "venus": 100,
+planet_pitch_bases = {
+    "mercury": 100,
+    "venus": 90,
     "earth": 80,
     "mars": 60,
     "jupiter": 45,
     "saturn":33,
     "uranus": 28,
     "neptune": 24
+}
+
+planet_pitch_ranges = {
+    "mercury": 12,
+    "venus": 20,
+    "earth": 20,
+    "mars": 20,
+    "jupiter": 20,
+    "saturn":20,
+    "uranus": 20,
+    "neptune": 20
 }
 
 planet_days_revolution = {
@@ -104,67 +118,112 @@ planet_days_revolution = {
 }
 
 
-def play_planet(which_planet, pitch_base, pitch_range, volume_scale, sampling_rate, sampling_phase, inst,
-                angle_filter=math.pi, sample_duration=0.1):
-    for i in itertools.count():
-        snapshot = get_solar_system_state()
-        x, y, z = snapshot.get_position(which_planet)
-        vx,vy,vz = snapshot.get_velocity(which_planet)
-        angle_earth = snapshot.get_angle("earth")
-        angle_planet = snapshot.get_angle(which_planet)
-        # see https://stackoverflow.com/a/2007279/46617
-        angle_diff = abs(math.atan2(math.sin(angle_planet-angle_earth), math.cos(angle_planet-angle_earth)))
-        pitch = round((x/ planet_average_distances[which_planet] * pitch_range) + pitch_base)
-        volume = abs(vx) / max_planet_speeds[which_planet] * volume_scale
-        if i % sampling_rate == sampling_phase and angle_diff <= angle_filter:
-            inst.play_note(pitch,volume,sample_duration)
-        else:
-            wait(sample_duration)
+@dataclasses.dataclass
+class OrbitMelody:
+    inst: ScampInstrument
+    planet: str
+    sampling_period: int
+    sampling_phase: int
+    angle_filter: float = math.pi
+    sample_duration: float = 0.1
+    volume_scale: float = 1
+    pitch_base: float = None  # defaults to dictionary lookup
+    pitch_range: float = None  # defaults to dictionary lookup
+    muted: bool = False
+
+    def __post_init__(self):
+        if self.planet not in planet_pitch_bases:
+            raise ValueError(f"Unrecognized planet {self.planet}")
+        if self.pitch_base is None:
+            self.pitch_base = planet_pitch_bases[self.planet]
+        if self.pitch_range is None:
+            self.pitch_range = planet_pitch_ranges[self.planet]
+
+    def play(self):
+        for i in itertools.count():
+            snapshot = get_solar_system_state()
+            x, y, z = snapshot.get_position(self.planet)
+            vx, vy, vz = snapshot.get_velocity(self.planet)
+            angle_earth = snapshot.get_angle("earth")
+            angle_planet = snapshot.get_angle(self.planet)
+            # see https://stackoverflow.com/a/2007279/46617
+            angle_diff = abs(math.atan2(math.sin(angle_planet - angle_earth), math.cos(angle_planet - angle_earth)))
+            pitch = round((x / planet_average_distances[self.planet] * self.pitch_range) + self.pitch_base)
+            volume = abs(vx) / max_planet_speeds[self.planet] * self.volume_scale
+            if i % self.sampling_period == self.sampling_phase and angle_diff <= self.angle_filter and not self.muted:
+                self.inst.play_note(pitch, volume, self.sample_duration)
+            else:
+                wait(self.sample_duration)
 
 
-# def play_planet_revolution_beat(planet_name, pitch, volume, note_dur, inst):
-#     days_since_year_start = 0
-#
-#     while True:
-#         wait(SAMPLE_DURATION)
-#         days_since_year_start += DAYS_PER_BEAT/10
-#         if days_since_year_start >= planet_days_revolution[planet_name]:
-#             inst.play_note(pitch, volume, note_dur, blocking=False)
-#             days_since_year_start %= planet_days_revolution[planet_name]
+def angle_dist(angle1, angle2):
+    return min(abs(angle2 % math.tau - angle1 % math.tau),
+               abs((angle2 + math.pi) % math.tau - (angle1 + math.pi) % math.tau))
 
 
-def play_planet_revolution_beat(planet_name, pitch, volume, note_dur, inst, sample_duration=0.1):
-    """Bases it on crossing the angle zero instead of time since the start"""
-    last_angle = get_solar_system_state().get_angle(planet_name)
-    while True:
-        wait(sample_duration)
-        this_angle = get_solar_system_state().get_angle(planet_name)
-        if this_angle > 0 and last_angle <= 0:
-            inst.play_note(pitch, volume, note_dur, blocking=False)
-        last_angle = this_angle
+@dataclasses.dataclass
+class OrbitBeat:
+    inst: ScampInstrument
+    planet: str
+    pitch: int
+    volume: int
+    note_dur: int
+    play_angles: Sequence[float] = (0, )
+    sample_duration: float = 0.03
+    muted: bool = False
+
+    def __post_init__(self):
+        if self.planet not in planet_pitch_bases:
+            raise ValueError(f"Unrecognized planet {self.planet}")
+
+    def play(self):
+        """Bases it on crossing the angle zero instead of time since the start"""
+        last_angle = get_solar_system_state().get_angle(self.planet)
+
+        while True:
+            wait(self.sample_duration)
+            this_angle = get_solar_system_state().get_angle(self.planet)
+            for theta in self.play_angles:
+                d1 = angle_dist(last_angle, this_angle)
+                d2 = angle_dist(last_angle, theta)
+                d3 = angle_dist(this_angle, theta)
+                if d2 < d1 and d3 < d1 and not self.muted:
+                    self.inst.play_note(self.pitch, self.volume, self.note_dur, blocking=False)
+
+            last_angle = this_angle
 
 
-def play_planet_proximity_alert(planet_1, planet_2, distance_threshold, pitch, inst, sample_duration=0.1):
-    """
-    Plays a proximity alert when the given planets approach closely
-    :param planet_1: first planet name
-    :param planet_2: second planet name
-    :param distance_threshold: from 0 to 1, where 0 corresponds to the closest distance between the planets, and
-        1 corresponds to the farthest. So if set to 0.25, the alert will sound when the planets are in the closest
-        25% of their range of distances.
-    :param pitch: pitch to play
-    :param inst: instrument to use
-    """
-    planet_pair = tuple(sorted([planet_1, planet_2]))
-    distance_threshold = remap(distance_threshold, min_planet_pair_distances[planet_pair],
-                               max_planet_pair_distances[planet_pair], 0, 1)
-    while True:
-        x1, y1, z1 = get_solar_system_state().get_position(planet_1)
-        x2, y2, z2 = get_solar_system_state().get_position(planet_2)
-        d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        if d < distance_threshold:
-            inst.play_note(pitch, remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]), sample_duration / 2)
-            wait(sample_duration / 4)
-            inst.play_note(pitch, remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]), sample_duration / 4)
-        else:
-            wait(sample_duration)
+@dataclasses.dataclass
+class ProximityAlert:
+    inst: ScampInstrument
+    planet_1: str
+    planet_2: str
+    distance_threshold: float  # mapped from 0 to 1, where 0 is the closest they get and 1 is the farthest
+    pitch: float
+    sample_duration: float = 0.1
+    muted: bool = False
+
+    def __post_init__(self):
+        for planet in (self.planet_1, self.planet_2):
+            if planet not in planet_pitch_bases:
+                raise ValueError(f"Unrecognized planet {planet}")
+
+    def play(self):
+        planet_pair = tuple(sorted([self.planet_1, self.planet_2]))
+        distance_threshold = remap(self.distance_threshold, min_planet_pair_distances[planet_pair],
+                                   max_planet_pair_distances[planet_pair], 0, 1)
+        while True:
+            x1, y1, z1 = get_solar_system_state().get_position(self.planet_1)
+            x2, y2, z2 = get_solar_system_state().get_position(self.planet_2)
+            d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+            if d < distance_threshold:
+                self.inst.play_note(self.pitch,
+                                    remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
+                                    self.sample_duration / 2)
+                wait(self.sample_duration / 4)
+                self.inst.play_note(self.pitch,
+                                    remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
+                                    self.sample_duration / 4)
+            else:
+                wait(self.sample_duration)
+

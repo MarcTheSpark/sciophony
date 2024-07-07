@@ -17,13 +17,11 @@ def solar_system_state():
     return get_solar_system_state(planet_music.s.beat())
 
 
-planet_music.wait_until_started()
-
-
 # Global constants
 HEIGHT = 1080
 WIDTH = 1920
 pixels_per_au = 100
+pixels_per_au_range = (13.8, 2000)
 MAGNIFIED_PIXELS_PER_AU = 35
 SUN_SIZE_SCALE_CONSTANT = 1 / 6000
 PLANET_SIZE_SCALE_CONSTANT = 1 / 2500
@@ -87,6 +85,9 @@ def draw_planet(planet, screen, position, color, magnified=False):
     pygame.draw.circle(screen, color, (int(x + WIDTH // 2), int(y + HEIGHT // 2)), radius)
 
 
+planet_music.wait_until_started()
+
+
 while running:
     # pixels_per_au /= 1.005
     for event in pygame.event.get():
@@ -97,6 +98,7 @@ while running:
                 pixels_per_au *= 1.1  # Increase exponentially
             elif event.button == 5:  # Scroll down
                 pixels_per_au /= 1.1  # Decrease exponentially
+            pixels_per_au = max(min(pixels_per_au, pixels_per_au_range[1]), pixels_per_au_range[0])
 
     screen.fill(BLACK)
 
