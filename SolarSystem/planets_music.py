@@ -19,9 +19,9 @@ class PlanetMusic(threading.Thread):
         super().__init__(daemon=True)
         self.s: Session = None
         self.started = threading.Condition()
-        self.orbit_melodies = []
-        self.orbit_beats = []
-        self.proximity_alerts = []
+        self.orbit_melodies: list[OrbitMelody] = []
+        self.orbit_beats: list[OrbitBeat] = []
+        self.proximity_alerts: list[ProximityAlert] = []
 
     def run(self):
         self.s = Session()
@@ -41,15 +41,15 @@ class PlanetMusic(threading.Thread):
         drums = self.s.new_part("POWER")
 
         self.orbit_beats.extend([
-            OrbitBeat(drums, "mercury", 75, 1, 0.1),
-            OrbitBeat(drums, "venus", 73, 1, 0.1, play_angles=(0, math.pi / 2)),
-            OrbitBeat(drums, "earth", 39, 1, 0.1, play_angles=(0, math.pi)),
+            OrbitBeat(drums, "mercury", 75, 1, 0.1, play_expansion_factor=5),
+            OrbitBeat(drums, "venus", 73, 1, 0.1, play_angles=(-0.2, math.pi / 2-0.2)),
+            OrbitBeat(drums, "earth", 39, 1, 0.1, play_angles=(0-0.2, math.pi-0.2)),
             OrbitBeat(drums, "mars", 63, 1, 0.1, play_angles=(0, 2 / 3 * math.tau))
         ])
 
         self.proximity_alerts.extend([
-            ProximityAlert(drums, "earth", "mars", 0.4, 67),
             ProximityAlert(drums, "mercury", "venus", 0.3, 66),
+            ProximityAlert(drums, "earth", "mars", 0.4, 67, color=(100, 200, 200)),
         ])
 
         self.orbit_melodies.extend([
@@ -68,6 +68,16 @@ class PlanetMusic(threading.Thread):
 
         with self.started:
             self.started.notify_all()
+
+        # for b in self.orbit_beats:
+        #     b.muted = True
+        #
+        # for mel in self.orbit_melodies:
+        #     mel.muted = True
+        #
+        # for pa in self.proximity_alerts:
+        #     pa.muted = True
+
         wait_forever()
 
     def wait_until_started(self):

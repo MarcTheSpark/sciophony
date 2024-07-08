@@ -7,7 +7,6 @@ from scamp import *
 from scamp_extensions.utilities import remap
 import math
 
-
 # first run: calculate the solar system model for the next 100000 days
 # ss = SolarSystem(0, 100000)
 # ss.save_to_npy("solarSystemModel.npz")
@@ -25,11 +24,9 @@ def get_solar_system_state(beat=None):
     return ss[beat * DAYS_PER_BEAT]
 
 
-max_planet_speeds = {
-    'mercury': 0.05, 'venus': 0.04, 'earth': 0.04,
-    'mars': 0.03, 'jupiter': 0.02, 'saturn': 0.013,
-    'uranus': 0.01, 'neptune': 0.007
-}
+max_planet_speeds = {'mercury': 0.03377467181658569, 'venus': 0.020631344486021684, 'earth': 0.017600297857352575,
+                     'mars': 0.015306741151730923, 'jupiter': 0.007920293148978685, 'saturn': 0.005865026730854264,
+                     'uranus': 0.004092044119806315, 'neptune': 0.003171517106514422}
 
 min_planet_pair_distances = {
     ('mercury', 'sun'): 0.31049603253105623, ('sun', 'venus'): 0.7091818143811311,
@@ -90,7 +87,7 @@ planet_pitch_bases = {
     "earth": 80,
     "mars": 60,
     "jupiter": 45,
-    "saturn":33,
+    "saturn": 33,
     "uranus": 28,
     "neptune": 24
 }
@@ -101,7 +98,7 @@ planet_pitch_ranges = {
     "earth": 20,
     "mars": 20,
     "jupiter": 20,
-    "saturn":20,
+    "saturn": 20,
     "uranus": 20,
     "neptune": 20
 }
@@ -130,6 +127,10 @@ class OrbitMelody:
     pitch_base: float = None  # defaults to dictionary lookup
     pitch_range: float = None  # defaults to dictionary lookup
     muted: bool = False
+    # visual properties
+    play_expansion_factor: float = 1.8
+    just_played_pc: int = dataclasses.field(default=None, init=False)
+    just_played_volume: float = None
 
     def __post_init__(self):
         if self.planet not in planet_pitch_bases:
@@ -151,6 +152,8 @@ class OrbitMelody:
             pitch = round((x / planet_average_distances[self.planet] * self.pitch_range) + self.pitch_base)
             volume = abs(vx) / max_planet_speeds[self.planet] * self.volume_scale
             if i % self.sampling_period == self.sampling_phase and angle_diff <= self.angle_filter and not self.muted:
+                self.just_played_pc = pitch % 12
+                self.just_played_volume = abs(vx) / max_planet_speeds[self.planet]
                 self.inst.play_note(pitch, volume, self.sample_duration)
             else:
                 wait(self.sample_duration)
@@ -168,9 +171,12 @@ class OrbitBeat:
     pitch: int
     volume: int
     note_dur: int
-    play_angles: Sequence[float] = (0, )
+    play_angles: Sequence[float] = (0,)
     sample_duration: float = 0.03
     muted: bool = False
+    # visual properties
+    play_expansion_factor: float = 4
+    just_played: bool = dataclasses.field(default=False, init=False)
 
     def __post_init__(self):
         if self.planet not in planet_pitch_bases:
@@ -188,6 +194,7 @@ class OrbitBeat:
                 d2 = angle_dist(last_angle, theta)
                 d3 = angle_dist(this_angle, theta)
                 if d2 < d1 and d3 < d1 and not self.muted:
+                    self.just_played = True
                     self.inst.play_note(self.pitch, self.volume, self.note_dur, blocking=False)
 
             last_angle = this_angle
@@ -202,6 +209,9 @@ class ProximityAlert:
     pitch: float
     sample_duration: float = 0.1
     muted: bool = False
+    alerting: bool = dataclasses.field(default=False, init=False)
+    # visual properties
+    color: tuple[int, int, int] = (255, 50, 50)
 
     def __post_init__(self):
         for planet in (self.planet_1, self.planet_2):
@@ -216,7 +226,8 @@ class ProximityAlert:
             x1, y1, z1 = get_solar_system_state().get_position(self.planet_1)
             x2, y2, z2 = get_solar_system_state().get_position(self.planet_2)
             d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-            if d < distance_threshold:
+            if d < distance_threshold and not self.muted:
+                self.alerting = True
                 self.inst.play_note(self.pitch,
                                     remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
                                     self.sample_duration / 2)
@@ -225,5 +236,5 @@ class ProximityAlert:
                                     remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
                                     self.sample_duration / 4)
             else:
+                self.alerting = False
                 wait(self.sample_duration)
-
