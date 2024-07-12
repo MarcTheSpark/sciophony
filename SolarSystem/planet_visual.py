@@ -25,7 +25,7 @@ def solar_system_state():
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 SUN_COLOR = (255, 255, 0)
-DEFAULT_PLANET_COLOR = np.array([255, 255, 255])
+
 PITCH_CLASS_COLORS = [
     np.array([255, 0, 0]),    # Red
     np.array([0, 255, 0]),    # Green
@@ -42,8 +42,8 @@ PITCH_CLASS_COLORS = [
 ]
 
 # Global constants
-HEIGHT = 1080
 WIDTH = 1920
+HEIGHT = 1080
 pixels_per_au = 100
 pixels_per_au_range = (13.8, 2000)
 MAGNIFIED_PIXELS_PER_AU = 35
@@ -71,6 +71,40 @@ def planet_screen_coords(planet):
 
 # Load and resize the magnifier glass image
 mag_glass_image = pygame.image.load('MagGlass.png')
+
+# Create a secondary surface (canvas) for drawing objects
+trails_canvas = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+FADE_ALPHA = 5
+FADE_SURFACE = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+FADE_SURFACE.fill((0, 0, 0, FADE_ALPHA))
+planet_trail_radius_muls = {planet: 1 for planet in PLANETS}
+
+
+def scale_canvas(canvas, zoom_factor):
+    """
+    Scale the content of the canvas by the given zoom factor and return a new canvas
+    with the original dimensions.
+
+    :param canvas: The original canvas to be scaled.
+    :param zoom_factor: The factor by which to scale the canvas content.
+    :return: A new canvas with the scaled content.
+    """
+    # Get the dimensions of the original canvas
+    width, height = canvas.get_size()
+
+    # Scale the content of the canvas
+    scaled_content = pygame.transform.scale(canvas, (int(width * zoom_factor), int(height * zoom_factor)))
+
+    # Create a new canvas with the same dimensions as the original
+    new_canvas = pygame.Surface((width, height), pygame.SRCALPHA)
+
+    offset_x = (width - scaled_content.get_width()) // 2
+    offset_y = (height - scaled_content.get_height()) // 2
+
+    # Blit the scaled content onto the new canvas
+    new_canvas.blit(scaled_content, (offset_x, offset_y))
+
+    return new_canvas
 
 
 def resize_magnifier_image(image, radius_pixels):
@@ -100,9 +134,7 @@ def get_sun_pixel_radius():
 
 
 planet_radius_muls = {planet: 1 for planet in PLANETS}
-planet_colors = {planet: DEFAULT_PLANET_COLOR for planet in PLANETS}
-
-
+planet_colors = {planet: WHITE for planet in PLANETS}
 
 # Initialize Pygame
 pygame.init()
@@ -117,6 +149,12 @@ clock = pygame.time.Clock()
 
 def draw_planet(planet, screen, position, magnified=False):
     radius = get_planet_pixel_radius(planet, magnified=magnified) * planet_radius_muls[planet]
+    x, y = position[:2] * (MAGNIFIED_PIXELS_PER_AU if magnified else pixels_per_au)
+    pygame.draw.circle(screen, WHITE, (int(x + WIDTH // 2), int(y + HEIGHT // 2)), radius)
+
+
+def draw_planet_trail(planet, screen, position, magnified=False):
+    radius = get_planet_pixel_radius(planet, magnified=magnified) * planet_trail_radius_muls[planet]
     x, y = position[:2] * (MAGNIFIED_PIXELS_PER_AU if magnified else pixels_per_au)
     pygame.draw.circle(screen, planet_colors[planet], (int(x + WIDTH // 2), int(y + HEIGHT // 2)), radius)
 
@@ -171,11 +209,16 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
+            old_ppa = pixels_per_au
+
             if event.button == 4:  # Scroll up
                 pixels_per_au *= 1.1  # Increase exponentially
             elif event.button == 5:  # Scroll down
                 pixels_per_au /= 1.1  # Decrease exponentially
             pixels_per_au = max(min(pixels_per_au, pixels_per_au_range[1]), pixels_per_au_range[0])
+
+            if pixels_per_au != old_ppa:
+                trails_canvas = scale_canvas(trails_canvas, pixels_per_au/old_ppa)
 
     screen.fill(BLACK)
 
@@ -185,19 +228,15 @@ while running:
     # Draw the sun at the center
     pygame.draw.circle(screen, SUN_COLOR, (WIDTH // 2, HEIGHT // 2), get_sun_pixel_radius())
 
+    # Blit the canvas to the main display surface
+    screen.blit(trails_canvas, (0, 0))
+    # Apply fading effect by drawing a semi-transparent rectangle over the canvas
+    trails_canvas.blit(FADE_SURFACE, (0, 0))
+
     # draw proximity alerts
     for proximity_alert in planet_music.proximity_alerts:
         if proximity_alert.alerting:
             draw_proximity_line(screen, proximity_alert.planet_1, proximity_alert.planet_2, proximity_alert.color)
-
-    # Draw PLANETS
-    for planet in PLANETS:
-        planet_radius_muls[planet] = 1 + (planet_radius_muls[planet] - 1) * PLANET_RADIUS_RETURN_CONSTANT
-        planet_colors[planet] = DEFAULT_PLANET_COLOR + (
-                    planet_colors[planet] - DEFAULT_PLANET_COLOR) * PLANET_COLOR_RETURN_CONSTANT
-        position = solar_system.get_position(planet)
-        draw_planet(planet, screen, position,
-                    magnified=(planet in PLANETS[:4]) if pixels_per_au < MAGNIFIED_PIXELS_PER_AU else False)
 
     for orbit_beat in planet_music.orbit_beats:
         if orbit_beat.just_played:
@@ -207,19 +246,23 @@ while running:
 
     for orbit_melody in planet_music.orbit_melodies:
         if orbit_melody.just_played_pc is not None:
-            planet_colors[orbit_melody.planet] = \
-                DEFAULT_PLANET_COLOR * (1 - orbit_melody.just_played_volume) + \
-                PITCH_CLASS_COLORS[orbit_melody.just_played_pc] * orbit_melody.just_played_volume
-            planet_radius_muls[orbit_melody.planet] = max(
-                planet_radius_muls[orbit_melody.planet],
-                1 + orbit_melody.just_played_volume * (orbit_melody.play_expansion_factor - 1)
-            )
+            planet_trail_radius_muls[orbit_melody.planet] = 1.2
+            planet_colors[orbit_melody.planet] = (PITCH_CLASS_COLORS[orbit_melody.just_played_pc] *
+                                                  orbit_melody.just_played_volume ** 1.7)
             orbit_melody.just_played_pc = None
-    # Beats should be pulsing in planet size that fade back to normal (always in the process of fading back to normal)
+        position = solar_system.get_position(orbit_melody.planet)
+        draw_planet_trail(
+            orbit_melody.planet, trails_canvas, position,
+            magnified=(orbit_melody.planet in PLANETS[:4]) if pixels_per_au < MAGNIFIED_PIXELS_PER_AU else False
+        )
+        planet_trail_radius_muls[orbit_melody.planet] *= 0.96
 
-    # Melodies should be colors, that fade back to white (always in the process of fading back to white, sets a new
-    # color when there's a new melody note)
-
+    # Draw PLANETS
+    for planet in PLANETS:
+        planet_radius_muls[planet] = 1 + (planet_radius_muls[planet] - 1) * PLANET_RADIUS_RETURN_CONSTANT
+        position = solar_system.get_position(planet)
+        draw_planet(planet, screen, position,
+                    magnified=(planet in PLANETS[:4]) if pixels_per_au < MAGNIFIED_PIXELS_PER_AU else False)
 
     # draw magnifying glass
     if pixels_per_au < MAGNIFIED_PIXELS_PER_AU and (alpha := mag_glass_image_resized.get_alpha()) < 255:

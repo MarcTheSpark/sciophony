@@ -128,7 +128,6 @@ class OrbitMelody:
     pitch_range: float = None  # defaults to dictionary lookup
     muted: bool = False
     # visual properties
-    play_expansion_factor: float = 1.8
     just_played_pc: int = dataclasses.field(default=None, init=False)
     just_played_volume: float = None
 
