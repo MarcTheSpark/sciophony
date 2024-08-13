@@ -8,16 +8,16 @@ from scamp_extensions.pitch import Scale
 from marciano.evolution import TraitInfo, Individual, Population
 from marciano.utility_funcs import phase_alignment, window_fit_score, target_fit_score
 from scamp_extensions.process import random_walk
-from scamp_extensions.utilities import TimeVaryingParameter, rotate_sequence, remap, wrap_to_range
+from scamp_extensions.utilities import TimeVaryingParameter, rotate_sequence, remap, wrap_to_range, atan_warp
 from scamp_extensions.rhythm import indispensability_array_from_expression
 from functools import lru_cache
 from scipy.ndimage import gaussian_filter1d
 from modspread import get_mod_n_spread_array
-
+from chord_builder import chord_from_pitch_classes
 
 # random.seed(0)
 
-beat_strengths = [x ** 2 for x in indispensability_array_from_expression("2*2*2*3", normalize=True)]
+beat_strengths = [x ** 3 for x in indispensability_array_from_expression("2*2*2*3", normalize=True)]
 snare_beat_strengths = rotate_sequence(beat_strengths, 3)
 
 # disturbances = [0, 1, 0, 0, 0.7, 0,
@@ -35,7 +35,7 @@ disturbances = np.zeros(24)
 #                         1.0, 0.2, 0.2] * 2
 
 beat_strength_values = sorted(beat_strengths, reverse=True)
-playback_settings.recording_file_path = "bm4.wav"
+# playback_settings.recording_file_path = "bm4.wav"
 s = Session(default_soundfont="MuseScore_General", tempo=190) #190
 # s.print_default_soundfont_presets()
 
@@ -53,7 +53,7 @@ def get_perfectly_even_distance_sum(num_onsets):
 
 @lru_cache
 def get_perfectly_uneven_distance_sum(cycle_length, num_onsets):
-    return  abs(cmath.exp(2j * math.pi / cycle_length) - 1) * (num_onsets - 1) + abs(cmath.exp(2j * math.pi * (num_onsets - 1) / cycle_length) - 1)
+    return abs(cmath.exp(2j * math.pi / cycle_length) - 1) * (num_onsets - 1) + abs(cmath.exp(2j * math.pi * (num_onsets - 1) / cycle_length) - 1)
 
 
 def calculate_evenness(on_offs):
@@ -89,11 +89,11 @@ class DrumLoop(Individual):
     genotype_info = (
         *(
             TraitInfo("beat_switch{position}", (0, 1), mutation_width=1,
-                      quantization=1, mutation_probability=0.1)
+                      quantization=1, mutation_probability=0.2)
             for position in range(cycle_length)
         ),
         *(
-            TraitInfo("volume{position}", (0.1, 1.0), mutation_width=0.2, mutation_probability=0.2)
+            TraitInfo("volume{position}", (0.1, 1.0), mutation_width=0.2, mutation_probability=0.3)
             for position in range(cycle_length)
         ),
     )
@@ -122,8 +122,14 @@ class DrumLoop(Individual):
     def busyness(self):
         return sum(self.beats()) / self.cycle_length
 
-    def activity_array(self):
-        return [on_off * volume for on_off, volume in zip(self.beats(), self.volumes())]
+    def activity_array(self, on_off_vs_volume_weighted: float = 1):
+        """
+        A volume-weighted (to an adjustable extend) array of activity for each beat.
+
+        :param on_off_vs_volume_weighted: if 1, it's completely weighted by volume; if 0 it's just on/off
+        """
+        return np.array([on_off * ((1 - on_off_vs_volume_weighted) + on_off_vs_volume_weighted * volume)
+                         for on_off, volume in zip(self.beats(), self.volumes())])
 
 
 class SnareLoop(DrumLoop):
@@ -131,6 +137,7 @@ class SnareLoop(DrumLoop):
     inst = s.new_part("piano")
     end_inst = s.new_part("strings", num_channels=16)
     play_prob_param = TimeVaryingParameter([0, 0, 1], [20, 80], clock=s, units="time")
+    harmony_volume_threshold = 0
 
     def play_comp_chords(self):
         volumes_np = np.array(self.volumes())
@@ -156,20 +163,12 @@ class SnareLoop(DrumLoop):
 
     # ----------------------------------- The ending: harmony ------------------------------------------
 
-    def play_harmony(self):
-        (chord1, start_beat1), (chord2, start_beat2) = zip(self.get_chords(), self.get_harmony_start_beats())
-        print(start_beat1, start_beat2)
-        print(chord1, [self.volumes()[start_beat1], self.volumes()[start_beat2]],
-              self.pulse_length * (12 - start_beat1 + start_beat2))
-        print(chord2, [self.volumes()[start_beat2], 0],
-                                 self.pulse_length * (12 - start_beat2))
-        self.end_inst.play_chord(chord1, [self.volumes()[start_beat1], self.volumes()[start_beat2]],
-                                 self.pulse_length * (12 - start_beat1 + start_beat2))
-        self.end_inst.play_chord(chord2, [self.volumes()[start_beat2], 0],
-                                 self.pulse_length * (12 - start_beat2))
-        # for chord, start_beat in zip(self.get_chords(), self.get_harmony_start_beats()):
-        #     wait(self.pulse_length * start_beat)
-        #     self.end_inst.play_chord(chord, self.volumes()[start_beat], self.pulse_length * (12 - start_beat))
+    def play_harmony(self, start_pitch=60, max_size=8):
+        chord1, chord2 = self.get_chords(start_pitch, max_size)
+        start_offset, dur1, dur2 = self.get_harmony_start_offset_and_durations()
+        wait(start_offset * self.pulse_length)
+        self.end_inst.play_chord(chord1, [0 if dur1 > 3 else 0.6, 1], dur1 * self.pulse_length)
+        self.end_inst.play_chord(chord2, [1, 0 if dur2 > 3 else 0.6 if dur2 > 2 else 1], dur2 * self.pulse_length)
 
     def get_pc_lists(self):
         return list(np.where(self.genotype_array[:12])[0]), list(np.where(self.genotype_array[12:24])[0])
@@ -190,11 +189,21 @@ class SnareLoop(DrumLoop):
                     break
         return chord
 
-    def get_chords(self):
-        return [SnareLoop.chord_from_pc_list(pc_list, 60, 8) for pc_list in self.get_pc_lists()]
+    def get_chords(self, start_pitch=60, max_size=8):
+        return [SnareLoop.chord_from_pc_list(pc_list, start_pitch, max_size) for pc_list in self.get_pc_lists()]
 
-    def get_harmony_start_beats(self):
-        return np.argmax(self.volumes()[:12]), np.argmax(self.volumes()[12:24])
+    # return [chord_from_pitch_classes(pc_list, 65, 85, 6) if len(pc_list) > 0 else []
+    #         for pc_list in self.get_pc_lists()]
+
+    def _get_harmony_start_beats(self):
+        return sorted(np.argsort(self.volumes())[-2:])
+        # return np.argmax(self.volumes()[:12]), np.argmax(self.volumes()[12:24])
+
+    def get_harmony_start_offset_and_durations(self):
+        start_beat1, start_beat2 = self._get_harmony_start_beats()
+        dur1 = (start_beat2 - start_beat1)
+        dur2 = (24 - start_beat2)
+        return start_beat1, dur1, dur2
 
     @staticmethod
     def voice_leading_distance(chord1, chord2):
@@ -216,7 +225,7 @@ class SnareLoop(DrumLoop):
         return average_distance
 
     @staticmethod
-    def measure_consonance(chord, interval_consonance=(1, -1, 0, 1, 1, 1, -1, 1, 1, 1, 0, -1)):
+    def measure_consonance(chord, interval_consonance=(3, -10, 0, 1, 4, 5, -3, 5, 2, 1, 0, -10)):
         """
         Measures the consonance of a chord based on the weighted consonance of the associated intervals
 
@@ -232,11 +241,12 @@ class SnareLoop(DrumLoop):
         # Count consonant intervals
         consonant_count = sum(interval_consonance[abs(max(*pair) - min(*pair)) % 12] for pair in pairs)
 
-        # Total number of intervals
-        total_intervals = len(chord) * (len(chord) - 1) / 2
-
-        # Calculate proportion of consonant intervals
-        return consonant_count / total_intervals if total_intervals else 0
+        return atan_warp(consonant_count, -10, 10, 0, 1)
+        # # Total number of intervals
+        # total_intervals = len(chord) * (len(chord) - 1) / 2
+        #
+        # # Calculate proportion of consonant intervals
+        # return consonant_count / total_intervals if total_intervals else 0
 
 
 def multi_iterator(iterator, multiple):
@@ -248,6 +258,7 @@ def multi_iterator(iterator, multiple):
 class HiHatLoop(DrumLoop):
     drum_pitch = 42
     inst = s.new_part("Saxophone")
+    arpeggio_inst = s.new_part("marimba")
     min_pitch, max_pitch = 54, 78
     play_prob_param = TimeVaryingParameter([0, 0, 1], [50, 50], clock=s, units="time")
 
@@ -272,6 +283,36 @@ class HiHatLoop(DrumLoop):
                 for _ in range(2):
                     next(interval_pattern)
                 wait(self.pulse_length)
+
+    def get_pc_lists(self):
+        return list(np.where(self.genotype_array[:12])[0]), list(np.where(self.genotype_array[12:24])[0])
+
+    def _get_arpeggio_pitches(self, pc_octave=72):
+        pitches = []
+
+        volume_lists = [self.volumes()[:12], self.volumes()[12:]]
+        last_volume = -1
+        for pc_list, volume_list in zip(self.get_pc_lists(), volume_lists):
+            pc_iter = itertools.cycle(pc_list[::-1])
+            for volume in volume_list:
+                try:
+                    pc = next(pc_iter)
+                except StopIteration:
+                    pc = 0
+                if len(pitches) == 0:
+                    pitches.append(pc_octave + pc)
+                elif volume > last_volume:
+                    pitches.append(pc_octave + pc if pc_octave + pc > pitches[-1] else pc_octave + 12 + pc)
+                else:
+                    pitches.append(pc_octave + pc if pc_octave + pc < pitches[-1] else pc_octave - 12 + pc)
+                last_volume = volume
+        return pitches
+
+    def play_arpeggios(self, pc_octave=72):
+        # Cycle through pcs (in reverse), going down to next closest pc each time
+        # Jump up an octave (new hi volume) with every large volume value
+        for pitch, volume in zip(self._get_arpeggio_pitches(pc_octave), self.volumes()):
+            self.arpeggio_inst.play_note(pitch, volume ** 0.5, self.pulse_length)
 
 
 class KickLoop(DrumLoop):
@@ -301,45 +342,9 @@ def do_metro():
 
 # fork(do_metro)
 
-
-def _snare_loop_harmony_fitness_metrics(sl: SnareLoop):
-    chord1, chord2 = sl.get_chords()
-    # Have it approach chords of average size 5 for each chord
-    chord_size_fitness = (target_fit_score(len(chord1), 5, 1) +
-                          target_fit_score(len(chord2), 5, 1)) / 2
-    # Have the chords approach the same size
-    chord_size_variation_fitness = target_fit_score((len(chord1) - len(chord2)), 0, 1)
-    # Have the chords approach an average voice leading distance of 1
-    # (each note is about a half-step from a note of the other chord)
-    voice_leading_dist_fitness = target_fit_score(SnareLoop.voice_leading_distance(chord1, chord2), 1, 2)
-    # have the min consonance approach zero
-    min_consonance_fitness = min(SnareLoop.measure_consonance(chord1), SnareLoop.measure_consonance(chord2))
-    return chord_size_fitness, chord_size_variation_fitness, voice_leading_dist_fitness, min_consonance_fitness
-
-
-def snare_loop_harmony_fitness_func(sl: SnareLoop):
-    chord_size_fitness, chord_size_variation_fitness, voice_leading_dist_fitness, min_consonance_fitness = \
-        _snare_loop_harmony_fitness_metrics(sl)
-    return (chord_size_variation_fitness + chord_size_variation_fitness +
-            voice_leading_dist_fitness + 5 * min_consonance_fitness)
-
-
-# snare_pop = Population.generate(SnareLoop, 100, snare_loop_harmony_fitness_func)
-# snare_pop.evolve_continuously(100, 0.7, clock=s)
-#
-# # Maybe the volumes control the timing completely
-# while True:
-#     snare_loop = snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
-#     print(_snare_loop_harmony_fitness_metrics(snare_loop))
-#     print(snare_loop_harmony_fitness_func(snare_loop))
-#     print("---")
-#     fork(snare_loop.play_bar)
-#     snare_loop.play_harmony()
-# # optimize for: consonance, minimum voice-leading distance, having a pc list of size 6?
-# exit()
 def snare_fitness_func(snare_loop: SnareLoop) -> float:
-    kick_alignment = phase_alignment(snare_loop.activity_array(), disturbances, 2)
-    return target_fit_score(snare_loop.busyness(), 0.4, 0.1) + snare_loop.beat_strength_alignment(snare_beat_strengths) - kick_alignment
+    return (target_fit_score(snare_loop.busyness(), 0.4, 0.1) +
+            2 * snare_loop.beat_strength_alignment(snare_beat_strengths))
 
 
 def hihat_fitness_func(hihat_loop: HiHatLoop) -> float:
@@ -395,41 +400,48 @@ hihat_play_thresh = TimeVaryingParameter([1, 1,  0], [150, 250], units="time")
 def evolve_and_play_disturbances():
     global disturbances
 
+    beats = [sl.beats() for sl in snare_pop.individuals]
+    print(beats)
+    print(np.mean(np.array(beats), axis=0))
+    print(disturbances)
+    for a, b in zip(np.mean(np.array(beats), axis=0), snare_beat_strengths):
+        print(a, b)
+    print("---------------------")
+
     def get_disturbances_collision_amount(activity_array):
-        blurred_disturbances = gaussian_filter1d(disturbances, 3, mode="wrap")
-        return np.dot(activity_array, blurred_disturbances) / len(activity_array)
+        # blurred_disturbances = gaussian_filter1d(disturbances, 3, mode="wrap")
+        return np.dot(activity_array, disturbances) / len(activity_array)
 
     def snare_avoidance_fitness_func(snare_loop: SnareLoop) -> float:
-        disturbance_alignment = get_disturbances_collision_amount(snare_loop.activity_array())
-        kick_alignment = phase_alignment(snare_loop.activity_array(), disturbances, 2)
-        return 2 - disturbance_alignment - kick_alignment  # + target_fit_score(snare_loop.busyness(), 0.4, 0.1) * 0.5
+        disturbance_alignment = get_disturbances_collision_amount(snare_loop.beats())
+        beat_strength_alignment = snare_loop.beat_strength_alignment(snare_beat_strengths)
+        return 2 - 5 * disturbance_alignment #- beat_strength_alignment  # + target_fit_score(snare_loop.busyness(), 0.4, 0.1) * 0.5
 
     def kick_avoidance_fitness_func(kick_loop: KickLoop) -> float:
-        disturbance_alignment = get_disturbances_collision_amount(kick_loop.activity_array())
-        snare_alignment = phase_alignment(kick_loop.activity_array(), disturbances, 2)
-        return 2 - disturbance_alignment - snare_alignment  # + target_fit_score(kick_loop.busyness(), 0.2, 0.1) * 0.5
+        disturbance_alignment = get_disturbances_collision_amount(kick_loop.activity_array(0.5))
+        beat_strength_alignment = kick_loop.beat_strength_alignment(beat_strengths)
+        return 2 - 5 * disturbance_alignment - beat_strength_alignment  # + target_fit_score(kick_loop.busyness(), 0.2, 0.1) * 0.5
 
     def hihat_avoidance_fitness_func(hihat_loop: HiHatLoop) -> float:
-        disturbance_alignment = get_disturbances_collision_amount(hihat_loop.activity_array())
-        return 2 - disturbance_alignment  # + target_fit_score(hihat_loop.busyness(), 0.9, 0.2) * 0.5
-
+        disturbance_alignment = get_disturbances_collision_amount(hihat_loop.activity_array(0.5))
+        return 2 - 5 * disturbance_alignment  # + target_fit_score(hihat_loop.busyness(), 0.9, 0.2) * 0.5
 
     snare_pop.fitness_function = snare_avoidance_fitness_func
     kick_pop.fitness_function = kick_avoidance_fitness_func
     hihat_pop.fitness_function = hihat_avoidance_fitness_func
-    snare_pop.evolve_continuously(19, sex_prob=0.4, clock=s)
+    snare_pop.evolve_continuously(17, sex_prob=0.4, clock=s)
     hihat_pop.evolve_continuously(18, sex_prob=0.4, clock=s)
-    kick_pop.evolve_continuously(17, sex_prob=0.4, clock=s)
+    kick_pop.evolve_continuously(19, sex_prob=0.4, clock=s)
 
     while True:
         # disturbances = np.ones(24)
-        disturbances = np.roll(get_mod_n_spread_array(length=24, n=17, spread=(current_clock().beat()) / 50 + 1), 2)
+        disturbances = np.roll(get_mod_n_spread_array(length=24, n=17, spread=((current_clock().beat()) / 30) ** 1.4 + 1), 2)
         for x in disturbances:
             lh = [int(50-10*x), int(55-10*x), int(60-10*x)]
             rh = [int(67+10*x), int(72+10*x), int(77+10*x)]
             orch_hit.play_chord(lh + rh if x else None, 0.4 + 0.6 * x, 0.5)
-        if sum(disturbances) > 7:
-            disturbances[:] = 0
+        if sum(disturbances) > 13:
+            # disturbances[:] = 0
             break
 
     snare_pop.stop_evolving()
@@ -443,6 +455,7 @@ s.fast_forward()
 while s.time() < 260:
     if disturbances_clock is not None and not disturbances_clock.alive:
         break
+
     # kit.play_note(81, 1, 1, blocking=False)
     fork(kick_pop.get_individual(0.5).play_bar)
     if s.time() >= 18:
@@ -454,12 +467,131 @@ while s.time() < 260:
     if s.time() >= 60:
         fork(hihat_pop.get_individual(0.25, 0.75).play_melody)
 
+    snare_pop.fitness_function(snare_pop.get_individual(0.25, 0.75))
+
     if s.time() > 120 and not disturbances_clock:
         disturbances_clock = fork(evolve_and_play_disturbances)
     # print(f"Population average: {kick_pop.mean_fitness()}, Individual: {kick_pop.fitness_function(kick_individual)}")
     wait(DrumLoop.bar_duration)
 
 s.fast_forward(False)
+
+
+# I THINK THIS WORKS REALLY WELL AS AN EVOLUTION!
+# From here, just tweak it based on
+# - how long the consonance_env takes to evolve
+# - speed of evolution
+# - sex prop affects convergence, since there's no mutation there for some reason. (seems a mistake)
+# WE WANT THE HI-HAT to do repeated arpeggios
+# MAYBE Bass has two notes per bar only?
+
+_consonance_targets = [
+    np.array((3, -1, 0, 1, 4, 5, -3, 5, 2, 1, 0, -1)),
+    np.array((3, -15, 0, 1, 4, 5, -3, 5, 2, 1, 0, -15))
+]
+consonance_env = TimeVaryingParameter.from_levels(_consonance_targets, 400)
+
+
+def _snare_loop_harmony_fitness_metrics(sl: SnareLoop):
+    chord1, chord2 = sl.get_chords()
+    # Have it approach chords of average size 5 for each chord
+    chord_size_fitness = (target_fit_score(len(chord1), 5, 1) +
+                          target_fit_score(len(chord2), 5, 1)) / 2
+    # Have the chords approach the same size
+    chord_size_variation_fitness = target_fit_score((len(chord1) - len(chord2)), 0, 1)
+    # Have the chords approach an average voice leading distance of 1
+    # (each note is about a half-step from a note of the other chord)
+    voice_leading_dist_fitness = target_fit_score(SnareLoop.voice_leading_distance(chord1, chord2), 1, 2)
+    # have the min consonance approach zero
+    consonance_sum = (SnareLoop.measure_consonance(chord1, consonance_env()) + SnareLoop.measure_consonance(chord2, consonance_env())) / 2
+    offset, dur1, dur2 = sl.get_harmony_start_offset_and_durations()
+    chord_dur_fitness = (target_fit_score(offset, 3, 2) +
+                         target_fit_score(dur1, 10, 2) +
+                         target_fit_score(dur2, 10, 2))
+    return (chord_size_fitness, chord_size_variation_fitness, voice_leading_dist_fitness,
+            consonance_sum, chord_dur_fitness)
+
+
+def snare_loop_harmony_fitness_func(sl: SnareLoop):
+    (chord_size_fitness, chord_size_variation_fitness, voice_leading_dist_fitness,
+     consonance_sum, chord_dur_fitness) = _snare_loop_harmony_fitness_metrics(sl)
+
+    return chord_size_fitness + consonance_sum * 3 + chord_dur_fitness
+
+    # return (chord_size_fitness + chord_size_variation_fitness +
+    #         voice_leading_dist_fitness + 4 * consonance_sum + chord_dur_fitness)
+
+
+@lru_cache(maxsize=2)
+def get_snare_harmonies_average(t):
+    return snare_pop.mean_of_func(lambda individual: np.array(individual.genotype_array[:24]))
+
+
+def hihat_loop_arpeggios_fitness_func(hh: HiHatLoop):
+    total_active_pcs = sum(hh.genotype_array[:24])
+    if total_active_pcs == 0:
+        return 0
+    return np.dot(get_snare_harmonies_average(s.time()), hh.genotype_array[:24]) / total_active_pcs ** 0.5
+
+
+snare_pop.fitness_function = snare_loop_harmony_fitness_func
+snare_pop.evolve_continuously(13, sex_prob=0.7, clock=s)
+hihat_pop.fitness_function = hihat_loop_arpeggios_fitness_func
+hihat_pop.evolve_continuously(13, sex_prob=0.4, clock=s)
+
+
+
+# Next step:
+# - Hi-hat arpeggiates on chords from each half. Some sort of bell sound. Measured on its consonance with the
+# snare population (i.e. the consonance of it's first half / first snare cord, it's second half w second snare chord)
+# as well as its activity, which is the volumes array thresholded.
+# Kick is on bassline. Aims for evenness of distribution.
+
+# # PLOTS THE HARMONY OVER TIME
+# harms = []
+# hihat_fits = []
+# s.fast_forward()
+# for _ in range(50):
+#     snare_loop = snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+#     harms.append(snare_pop.mean_of_func(lambda sl: (SnareLoop.measure_consonance(sl.get_chords()[0]) +
+#                                                     SnareLoop.measure_consonance(sl.get_chords()[1])) / 2))
+#     hihat_fits.append(hihat_pop.mean_fitness())
+#     print(consonance_env())
+#     wait(DrumLoop.bar_duration)
+#
+# from matplotlib import pyplot as plt
+# plt.plot(harms, label="consonance")
+# plt.plot(hihat_fits, label="hihat fits")
+# plt.legend()
+# plt.show()
+# for _ in range(5):
+#     print(snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0).get_chords())
+# s.fast_forward(False)
+
+
+
+# Maybe the volumes control the timing completely
+s.start_transcribing()
+while True:
+    kick_loop = kick_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+    snare_loop = snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+    hihat_loop = hihat_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+
+    chord_pc_flags = np.array(hihat_loop.genotype_array[:24])
+    chord_pc_flags = np.where(chord_pc_flags == 0, -1, chord_pc_flags)
+    fork(kick_loop.play_bar)
+    fork(snare_loop.play_bar)
+    fork(hihat_loop.play_bar)
+    fork(snare_loop.play_harmony)
+    # fork(hihat_loop.play_arpeggios)
+    wait(DrumLoop.bar_duration)
+    print(_snare_loop_harmony_fitness_metrics(snare_loop)[-2], snare_loop_harmony_fitness_func(snare_loop))
+    chords = snare_loop.get_chords()
+    print(snare_loop.get_chords())
+    print(SnareLoop.measure_consonance(chords[0]), SnareLoop.measure_consonance(chords[1]))
+    print("---")
+s.stop_transcribing().to_score(time_signature="12/8").show()
+exit()
 while True:
     fork(kick_pop.get_individual(0.5).play_bar)
     fork(kick_pop.get_individual(0.25, 0.75).play_bassline)
