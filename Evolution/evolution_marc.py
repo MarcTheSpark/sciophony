@@ -18,7 +18,7 @@ random.seed(10)
 
 # ------------------------------------- GLOBAL VARIABLES --------------------------------------------
 
-# 12/8 meter, raised to the power of 3 to be extra enphasized
+# 12/8 meter, raised to the power of 3 to bbm4e extra emphasized
 beat_strengths = [x ** 3 for x in indispensability_array_from_expression("2*2*2*3", normalize=True)]
 # Snare is rotated by three 8ths so that it hits on the off beats.
 snare_beat_strengths = rotate_sequence(beat_strengths, 3)
@@ -29,7 +29,6 @@ disturbances = np.zeros(24)
 # We use the first however many of this sorted beat strengths
 # later as a denominator when calculating beat strength alignment
 beat_strength_values = sorted(beat_strengths, reverse=True)
-# playback_settings.recording_file_path = "bm4.wav"
 
 # Used at the end when the pitchy stuff comes back; controls the probability of playing things towards the end
 # ramps up to 1 slowly.
@@ -96,6 +95,8 @@ s.timing_policy = "relative"  # 0.7
 
 if STREAM_MIDI_TO_LOGIC:
     kit = s.new_midi_part("Drum Kit", "IAC Driver Bus 1")
+    kit2 = s.new_midi_part("Drum Kit", "IAC Driver Bus 1")
+    kit3 = s.new_midi_part("Drum Kit", "IAC Driver Bus 1")
     bass = s.new_midi_part("Bass", "IAC Driver Bus 2")
     piano = s.new_midi_part("Piano", "IAC Driver Bus 3")
     sax = s.new_midi_part("Saxophone", "IAC Driver Bus 4")
@@ -105,6 +106,8 @@ if STREAM_MIDI_TO_LOGIC:
     metro_kit = s.new_midi_part("Metronome Kit", "IAC Driver Bus 8")
 else:
     kit = s.new_part("STANDARD")
+    kit2 = s.new_part("STANDARD")
+    kit3 = s.new_part("STANDARD")
     bass = s.new_part("Fingered Bass")
     piano = s.new_part("Piano")
     sax = s.new_part("Saxophone")
@@ -114,8 +117,19 @@ else:
     metro_kit = s.new_part("STANDARD")
 
 
-s.start_transcribing()
-s.fast_forward()
+main_kit_play_note = kit.play_note
+
+def kit_play_note(pitch, volume, dur, properties=None):
+    if pitch == 36:
+        main_kit_play_note(pitch, volume, dur, properties)
+    elif pitch == 38:
+        kit2.play_note(pitch, volume, dur, properties)
+    else:
+        kit3.play_note(pitch, volume, dur, properties)
+
+kit.play_note = kit_play_note
+s.start_transcribing([kit, kit2, kit3, sax, orch_hit, strings, marimba, bass, piano])
+# s.fast_forward()
 
 
 class DrumLoop(Individual):
@@ -151,7 +165,8 @@ class DrumLoop(Individual):
 
     def play_bar(self, volume_mul=1):
         for on_off, volume in zip(self.beats(), self.volumes()):
-            kit.play_note(self.drum_pitch if on_off else None, volume * volume_mul, self.pulse_length)
+            kit.play_note(self.drum_pitch if on_off else None, volume * volume_mul, self.pulse_length,
+                          f"text: {int(volume * 10)}")
 
     def evenness(self):
         return calculate_evenness(self.beats())
@@ -700,5 +715,5 @@ while s.time() < 360:
     wait(DrumLoop.bar_duration)
 
 perf = s.stop_transcribing()
-perf.export_to_midi_file("MarcEvolution.mid")
-perf.to_score(time_signature="12/8").export_music_xml("MarcEvolutionXML.musicxml")
+# perf.export_to_midi_file("MarcEvolution.mid")
+perf.to_score(time_signature="12/8").export_music_xml("MarcEvolutionXML2.musicxml")
