@@ -1,10 +1,9 @@
 import cmath
 import functools
+import random
 import itertools
 import math
-import random
 import threading
-
 import numpy as np
 from scamp import *
 from marciano.evolution import TraitInfo, Individual, Population
@@ -13,12 +12,12 @@ from scamp_extensions.utilities import TimeVaryingParameter, rotate_sequence, re
 from scamp_extensions.rhythm import indispensability_array_from_expression
 from functools import lru_cache
 from modspread import get_mod_n_spread_array
+from save_vals import SaveVals
 
 STREAM_MIDI_TO_LOGIC = False
-random.seed(8)  # Probably the best!
+
 random.seed(10)
-
-
+saver = SaveVals()
 
 # ------------------------------------- GLOBAL VARIABLES --------------------------------------------
 
@@ -26,9 +25,6 @@ random.seed(10)
 beat_strengths = [x ** 3 for x in indispensability_array_from_expression("2*2*2*3", normalize=True)]
 # Snare is rotated by three 8ths so that it hits on the off beats.
 snare_beat_strengths = rotate_sequence(beat_strengths, 3)
-
-# Initialized to zero (part-way through we start introducing disturbances)
-disturbances = np.zeros(24)
 
 # We use the first however many of this sorted beat strengths
 # later as a denominator when calculating beat strength alignment
@@ -180,7 +176,7 @@ else:
     marimba = s.new_part("marimba")
     metro_kit = s.new_part("STANDARD")
 
-snare_on_offs = []
+
 class SnareLoop(DrumLoop):
     drum_pitch = 38
     inst = piano
@@ -202,12 +198,10 @@ class SnareLoop(DrumLoop):
         long_note_thresh = np.percentile(volumes_np, 75)
         short_note_thresh = np.percentile(volumes_np, 50)
         held_chord = None
-        # on_offs = []
         for root_pitch, chord_config, volume, on_off in zip(self.root_pitches,
                                                             itertools.cycle(self.chord_configurations), self.volumes(),
                                                             self.beats()):
-            if on_off and volume >= short_note_thresh and random.random() < SnareLoop.play_prob_param():
-                # on_offs.append(1)
+            if on_off and saver.save(int(volume >= short_note_thresh and random.random() < SnareLoop.play_prob_param()), "snare_piano"):
                 if held_chord:
                     held_chord.end()
                     held_chord = None
@@ -219,12 +213,10 @@ class SnareLoop(DrumLoop):
                     self.inst.play_chord([root_pitch + 12 + interval for interval in chord_config],
                                          remap(volume, 0.5, 1.0, 0, 1),
                                          self.pulse_length, "staccato")
-
             else:
-                # on_offs.append(0)
+                if not on_off:
+                    saver.save(0, "snare_piano")
                 wait(self.pulse_length)
-        # snare_on_offs.append(on_offs)
-        # print(snare_on_offs)
 
     # -------------------------------- The ending: beat switches reinterpreted as pitch classes -----------------------
 
@@ -364,13 +356,15 @@ class HiHatLoop(DrumLoop):
         interval_pattern = itertools.cycle([-2, -1, -3, 4])
         for root_pitch, volume, on_off in zip(self.root_pitches, self.volumes(), self.beats()):
             pitch = wrap_to_range(pitch, self.min_pitch, self.max_pitch)
-            if on_off and random.random() < HiHatLoop.play_prob_param():
+            if on_off and saver.save(int(random.random() < HiHatLoop.play_prob_param()), "hihat_sax"):
                 for _ in range(2):
                     self.inst.play_note(pitch,
                                         remap(volume, 0.2, 1.0, 0, 1),
                                         self.pulse_length / 2)
                     pitch += next(interval_pattern)
             else:
+                if not on_off:
+                    saver.save(0, "hihat_sax")
                 for _ in range(2):
                     next(interval_pattern)
                 wait(self.pulse_length)
@@ -496,6 +490,7 @@ class EvolutionMusic(threading.Thread):
         )
 
         self.playing_individuals = {}
+        self.disturbances = np.zeros(24)
 
     def run(self):
         global end_play_prob
@@ -532,23 +527,22 @@ class EvolutionMusic(threading.Thread):
         # Introduce disturbances, and have all of the parts try to avoid them metrically
 
         def play_disturbances():
-            global disturbances
-
             while True:
                 # disturbances = np.ones(24)
-                disturbances = np.roll(
+                self.disturbances = np.roll(
                     get_mod_n_spread_array(length=24, n=17, spread=((current_clock().beat()) / 30) ** 1.4 + 1), 2)
-                for x in disturbances:
+                for x in self.disturbances:
                     lh = [int(50 - 10 * x), int(55 - 10 * x), int(60 - 10 * x)]
                     rh = [int(67 + 10 * x), int(72 + 10 * x), int(77 + 10 * x)]
 
                     orch_hit.play_chord(lh + rh if x else None, 0.4 + 0.6 * x, 0.5)
-                if sum(disturbances) > 13:
+                if sum(self.disturbances) > 13:
+                    self.disturbances[:] = 0
                     break
 
         def get_disturbances_collision_amount(activity_array):
             """Measures how much a given activity array is colliding with the disturbances"""
-            return np.dot(activity_array, disturbances) / len(activity_array)
+            return np.dot(activity_array, self.disturbances) / len(activity_array)
 
         # Fitness functions now focus on avoiding disturbances
         def snare_avoidance_fitness_func(snare_loop: SnareLoop) -> float:
@@ -691,3 +685,8 @@ class EvolutionMusic(threading.Thread):
             fork(kick_loop.play_bassline_end)
 
             wait(DrumLoop.bar_duration)
+
+
+# s.fast_forward()
+# EvolutionMusic().run()
+# saver.save_to_json("saved_vals.json")

@@ -4,6 +4,7 @@ import numpy as np
 import pygame
 from scamp_extensions.utilities import TimeVaryingParameter
 from evolution_marc_on_thread import s, EvolutionMusic
+from save_vals import SaveVals
 
 
 # Initialize pygame
@@ -19,6 +20,11 @@ COLOR_INACTIVE = (200, 200, 200)  # Light Grey
 COLOR_ACTIVE = (0, 0, 0)  # Black
 COLOR_PLAYING_INACTIVE = (100, 100, 100)  # Dark grey
 COLOR_PLAYING_ACTIVE = (0, 0, 255)  # Blue
+
+# Constants for X thickness
+MIN_DISTURBANCE_WIDTH = 2  # Minimum X thickness
+MAX_DISTURBANCE_WIDTH = 10  # Maximum X thickness
+
 
 
 # Function to draw a partially filled box
@@ -120,6 +126,81 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
         draw_part_filled_box(x_pos, y_pos, box_size, fill_array[i], state, opacity)
 
 
+def overlay_exes_on_box(x_norm, y_norm, width_norm, ex_array, playing_index, max_per_row):
+    """
+    Draws a series of red Xs on top of the box array. The thickness of each X is determined by the ex_array values.
+
+    Parameters:
+    - x_norm, y_norm: Normalized starting position of the array (0 to 1, proportional to WIDTH/HEIGHT)
+    - width_norm: Normalized total width of the array (0 to 1, proportional to WIDTH)
+    - ex_array: Numpy array with values from 0 to 1, determining whether and how thick the X should be
+    - playing_index: Index of the currently playing box, which makes the X twice as thick
+    - max_per_row: Maximum number of boxes per row
+    """
+    # Determine the number of boxes
+    num_boxes = len(ex_array)
+
+    # Calculate total width and size of each square box
+    total_width = width_norm * WIDTH
+    box_size = total_width / min(max_per_row, num_boxes)  # Ensure boxes are square
+
+    # Calculate starting position based on normalized values
+    x_start = x_norm * WIDTH
+    y_start = y_norm * HEIGHT
+
+    # Draw each X
+    for i in range(num_boxes):
+        # Only draw an X if ex_array[i] > 0
+        if ex_array[i] > 0:
+            # Determine the row and column of the box
+            row = i // max_per_row
+            col = i % max_per_row
+
+            # Calculate the x and y positions for the current box
+            x_pos = x_start + col * box_size
+            y_pos = y_start + row * box_size
+
+            # Determine the thickness of the X based on ex_array[i]
+            thickness = MIN_DISTURBANCE_WIDTH + ex_array[i] * (MAX_DISTURBANCE_WIDTH - MIN_DISTURBANCE_WIDTH)
+
+            # Double the thickness if it's the playing index
+            if i == playing_index:
+                thickness *= 2
+                x_pos -= box_size * 0.1
+                y_pos -= box_size * 0.1
+                box_size *= 1.2
+
+            # Draw the X with the calculated thickness
+            draw_x_on_box(x_pos, y_pos, box_size, thickness)
+
+
+def draw_x_on_box(x, y, size, thickness):
+    """
+    Draws a red X on top of a box at the given position with the specified thickness.
+
+    Parameters:
+    - x, y: Top-left position of the box
+    - size: Size of the square box
+    - thickness: Thickness of the X lines
+    """
+    color = (255, 0, 0)  # Red color for the X
+
+    # Draw the two diagonal lines that form the X
+    draw_line_round_corners_polygon(screen, (x, y), (x + size, y + size), color, int(thickness))
+    draw_line_round_corners_polygon(screen, (x, y + size), (x + size, y), color, int(thickness))
+
+
+def draw_line_round_corners_polygon(surf, p1, p2, c, w):
+    p1v = pygame.math.Vector2(p1)
+    p2v = pygame.math.Vector2(p2)
+    lv = (p2v - p1v).normalize()
+    lnv = pygame.math.Vector2(-lv.y, lv.x) * w // 2
+    pts = [p1v + lnv, p2v + lnv, p2v - lnv, p1v - lnv]
+    pygame.draw.polygon(surf, c, pts)
+    pygame.draw.circle(surf, c, p1, round(w / 2))
+    pygame.draw.circle(surf, c, p2, round(w / 2))
+
+
 music = EvolutionMusic(daemon=True)
 music.start()
 
@@ -176,8 +257,8 @@ beat_boxes = {
     ),
     "snare_piano": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
-        (132, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
-        (136, GenotypeGridDrawing((0.37, 0.6), 0.26, 1)),
+        (32, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
+        (36, GenotypeGridDrawing((0.37, 0.6), 0.26, 1)),
     ),
     "hihat_sax": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
@@ -186,15 +267,9 @@ beat_boxes = {
     )
 }
 
-active_overrides = {
-    "snare_piano": [[0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1], [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0], [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0], [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0]],
-}
-
 beat_y_pos = TimeVaryingParameter([0.38, 0.38, 0.22, 0.06], [40, 10, 10], [0, 2, -2])
-kick_bass_opacity = TimeVaryingParameter([0, 0, 1], [60, 4])
-snare_piano_opacity = TimeVaryingParameter([0, 0, 1], [132, 4])
-hihat_sax_opacity = TimeVaryingParameter([0, 0, 1], [192, 4])
-s.fast_forward_to_beat(80)
+# s.fast_forward_to_beat(390)
+saved_values = SaveVals.load_from_json("saved_vals.json")
 
 last_playing_index = 0
 # Main loop
@@ -205,18 +280,29 @@ while running:
     # Fill the background
     screen.fill((255, 255, 255))  # White background
 
-    playing_index = (s.beat() // 0.5) % 24
+    playing_index = int(s.beat() // 0.5) % 24
+    new_cycle = last_playing_index != playing_index == 0
     for gene_box in music.playing_individuals:
         current_drawing: GenotypeGridDrawing = beat_boxes[gene_box]()
         if current_drawing.opacity > 0:
-            if gene_box in active_overrides and len(active_overrides[gene_box]) > 0:
-                active_array = active_overrides[gene_box].pop(0) if last_playing_index != playing_index == 0 else active_overrides[gene_box][0]
-            else:
-                active_array = music.playing_individuals[gene_box].genotype_array[:24]
+            active_array = music.playing_individuals[gene_box].genotype_array[:24]
+
+            if gene_box in saved_values.values_by_situation:
+                if new_cycle:
+                    saved_values.consume(gene_box, how_many=24)
+                mask = saved_values.read(gene_box, how_many=24)
+
+                active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
 
             fill_array = music.playing_individuals[gene_box].genotype_array[24:48]
             draw_box_array(*current_drawing.position, current_drawing.width, active_array, fill_array, playing_index,
                            6, opacity=current_drawing.opacity)
+            if np.any(music.disturbances):
+                dist_copy = music.disturbances.copy()
+                dist_copy[playing_index + 1:] = 0
+                overlay_exes_on_box(*current_drawing.position, current_drawing.width,
+                                    dist_copy,  playing_index, 6)
+
     last_playing_index = playing_index
 
     # Event handling
