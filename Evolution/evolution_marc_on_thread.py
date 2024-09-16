@@ -225,9 +225,15 @@ class SnareLoop(DrumLoop):
         Plays the chord progression from measure 1 to measure 2 as a set of horizontal voice-leadings
         that are not necessarily aligned, but that become more aligned over time.
         """
+        voices = []
+        note_change_points = []
         for pitch_pairs in self.get_voices():
             if random.random() < end_play_prob:
-                fork(self._play_harmony_voice, args=(pitch_pairs, self.get_random_note_change_points()))
+                change_points = self.get_random_note_change_points()
+                voices.append(pitch_pairs)
+                note_change_points.append(change_points)
+                fork(self._play_harmony_voice, args=(pitch_pairs, change_points))
+        saver.save([voices, note_change_points], "harmony_voices")
         wait_for_children_to_finish()
 
     def _play_harmony_voice(self, pitches, note_start_points):
@@ -403,9 +409,15 @@ class HiHatLoop(DrumLoop):
     def play_arpeggios(self, pc_octave=72):
         # Cycle through pcs (in reverse), going down to next closest pc each time
         # Jump up an octave (new hi volume) with every large volume value
+        pitches_played = []
         for pitch, volume in zip(self._get_arpeggio_pitches(pc_octave), self.volumes()):
-            self.end_inst.play_note(pitch if random.random() < end_play_prob ** 1.3 else None,
-                                    volume ** 0.5, self.pulse_length)
+            if random.random() < end_play_prob ** 1.3:
+                self.end_inst.play_note(pitch, volume ** 0.5, self.pulse_length)
+                pitches_played.append(int(pitch))
+            else:
+                wait(self.pulse_length)
+                pitches_played.append(None)
+        saver.save(pitches_played, "end_arpeggio_pitches")
 
 
 class KickLoop(DrumLoop):
@@ -437,18 +449,29 @@ class KickLoop(DrumLoop):
         """
         activities = self.activity_array(0.5)
 
+        bass_line_notes_played = []
+
         if sum(activities[:12]) > 0 and random.random() < end_play_prob ** 0.5:
             first_pitch = random.choices(range(0, 12), weights=activities[:12])[0]
             wait(first_pitch * self.pulse_length)
             self.inst.play_note(first_pitch + 36, 1, (12 - first_pitch) * self.pulse_length)
+            bass_line_notes_played.append(first_pitch)
         else:
-            wait(self.bar_duration)
+            # wait(self.bar_duration)
+            wait(12 * self.pulse_length)
+            bass_line_notes_played.append(None)
+
         if sum(activities[12:]) > 0 and random.random() < end_play_prob ** 0.5:
             second_pitch = random.choices(range(0, 12), weights=activities[12:])[0]
             wait(second_pitch * self.pulse_length)
             self.inst.play_note(second_pitch + 36, 1, (12 - second_pitch) * self.pulse_length)
+            bass_line_notes_played.append(second_pitch)
         else:
-            wait(self.bar_duration)
+            # wait(self.bar_duration)
+            wait(12 * self.pulse_length)
+            bass_line_notes_played.append(None)
+
+        saver.save(bass_line_notes_played, "bass_pitches_end")
 
 
 class EvolutionMusic(threading.Thread):
@@ -513,12 +536,19 @@ class EvolutionMusic(threading.Thread):
             # Gradually introduce melodic aspects
             if s.time() >= 18:
                 self.playing_individuals["kick_bass"] = self.kick_pop.get_individual(0.25, 0.75)
+                if "kick_bass_preimage" not in saver.values_by_situation:
+                    saver.save(self.playing_individuals["kick_bass"].genotype_array, "kick_bass_preimage" )
+
                 fork(self.playing_individuals["kick_bass"].play_bassline)
             if s.time() >= 38:
                 self.playing_individuals["snare_piano"] = self.snare_pop.get_individual(0.25, 0.75)
+                if "snare_piano_preimage" not in saver.values_by_situation:
+                    saver.save(self.playing_individuals["snare_piano"].genotype_array, "snare_piano_preimage")
                 fork(self.playing_individuals["snare_piano"].play_comp_chords)
             if s.time() >= 60:
                 self.playing_individuals["hihat_sax"] = self.hihat_pop.get_individual(0.25, 0.75)
+                if "hihat_sax_preimage" not in saver.values_by_situation:
+                    saver.save(self.playing_individuals["hihat_sax"].genotype_array, "hihat_sax_preimage")
                 fork(self.playing_individuals["hihat_sax"].play_melody)
 
             wait(DrumLoop.bar_duration)
@@ -666,23 +696,40 @@ class EvolutionMusic(threading.Thread):
 
         while s.time() < 360:
             end_play_prob = end_play_prob_curve()
-            kick_loop = self.kick_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
-            snare_loop = self.snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
-            hihat_loop = self.hihat_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+            # kick_loop = self.kick_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+            # snare_loop = self.snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+            # hihat_loop = self.hihat_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
+            #
+            # fork(kick_loop.play_bar)
+            # fork(snare_loop.play_bar)
+            # fork(hihat_loop.play_bar)
+            #
+            # # Play the melodic parts (these will fade out)
+            # fork(self.kick_pop.get_individual(0.25, 0.75).play_bassline)
+            # fork(self.snare_pop.get_individual(0.25, 0.75).play_comp_chords)
+            # fork(self.hihat_pop.get_individual(0.25, 0.75).play_melody)
 
-            fork(kick_loop.play_bar)
-            fork(snare_loop.play_bar)
-            fork(hihat_loop.play_bar)
 
-            # Play the melodic parts (these will fade out)
-            fork(self.kick_pop.get_individual(0.25, 0.75).play_bassline)
-            fork(self.snare_pop.get_individual(0.25, 0.75).play_comp_chords)
-            fork(self.hihat_pop.get_individual(0.25, 0.75).play_melody)
+            # Play the beats
+            self.playing_individuals["kick_end"] = self.playing_individuals["kick"] = self.kick_pop.get_individual(0.7, 1.0)
+            self.playing_individuals["snare_harmony"] = self.playing_individuals["snare"] = self.snare_pop.get_individual(0.7, 1.0)
+            self.playing_individuals["hihat_marimba"] = self.playing_individuals["hihat"] = self.hihat_pop.get_individual(0.7, 1.0)
+            fork(self.playing_individuals["kick"].play_bar)
+            fork(self.playing_individuals["snare"].play_bar)
+            fork(self.playing_individuals["hihat"].play_bar, args=(0.6,))
+
+            # Play the melodic parts
+            self.playing_individuals["kick_bass"] = self.kick_pop.get_individual(0.25, 0.75)
+            fork(self.playing_individuals["kick_bass"].play_bassline)
+            self.playing_individuals["snare_piano"] = self.snare_pop.get_individual(0.25, 0.75)
+            fork(self.playing_individuals["snare_piano"].play_comp_chords)
+            self.playing_individuals["hihat_sax"] = self.hihat_pop.get_individual(0.25, 0.75)
+            fork(self.playing_individuals["hihat_sax"].play_melody)
 
             # play end music (these will fade in)
-            fork(snare_loop.play_harmony)
-            fork(hihat_loop.play_arpeggios)
-            fork(kick_loop.play_bassline_end)
+            fork(self.playing_individuals["snare_harmony"].play_harmony)
+            fork(self.playing_individuals["hihat_marimba"].play_arpeggios)
+            fork(self.playing_individuals["kick_end"].play_bassline_end)
 
             wait(DrumLoop.bar_duration)
 
