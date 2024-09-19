@@ -5,7 +5,7 @@ import pygame
 from scamp_extensions.utilities import TimeVaryingParameter
 from evolution_marc_on_thread import s, EvolutionMusic
 from save_vals import SaveVals
-
+import math
 
 # Initialize pygame
 pygame.init()
@@ -26,14 +26,13 @@ MIN_DISTURBANCE_WIDTH = 2  # Minimum X thickness
 MAX_DISTURBANCE_WIDTH = 10  # Maximum X thickness
 
 
-
-# Function to draw a partially filled box
-def draw_part_filled_box(x, y, size, filled_portion, state, opacity=1):
+def draw_part_filled_box(surface, x, y, size, filled_portion, state, opacity=1):
     """
     Draws a box partially filled from the bottom up according to the filled_portion and the state.
 
     Parameters:
-    - x, y: Top-left position of the box
+    - surface: The surface to draw the box onto
+    - x, y: Top-left position of the box on the surface
     - size: Size of the square box (width and height are the same)
     - filled_portion: Fraction (0 to 1) indicating how much of the box should be filled
     - state: Can be "inactive", "active", or "playing" to determine the fill and outline color
@@ -61,24 +60,18 @@ def draw_part_filled_box(x, y, size, filled_portion, state, opacity=1):
     # Calculate the height of the filled portion
     filled_height = size * filled_portion
 
-    # Create a temporary surface for the box with per-pixel alpha
-    box_surface = pygame.Surface((size, size), pygame.SRCALPHA)
-
     # Draw the filled portion (bottom-up) on the surface
-    filled_rect = pygame.Rect(0, size - filled_height, size, filled_height)
-    pygame.draw.rect(box_surface, fill_color, filled_rect)
+    filled_rect = pygame.Rect(x, y + size - filled_height, size, filled_height)
+    pygame.draw.rect(surface, fill_color, filled_rect)
 
     # Draw the outline on the surface
-    pygame.draw.rect(box_surface, outline_color, (0, 0, size, size), int(outline_thickness))
-
-    # Blit the surface with alpha onto the main screen
-    screen.blit(box_surface, (x, y))
+    pygame.draw.rect(surface, outline_color, (x, y, size, size), int(outline_thickness))
 
 
-# Function to draw an array of boxes
-def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing_indices, max_per_row, opacity=1):
+def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing_indices, max_per_row, opacity=1,
+                   rotate=0):
     """
-    Draws an array of square boxes based on the given parameters.
+    Draws an array of square boxes and rotates the entire array while keeping the top-left corner anchored.
 
     Parameters:
     - x_norm, y_norm: Normalized starting position of the array (0 to 1, proportional to WIDTH/HEIGHT)
@@ -88,6 +81,7 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
     - playing_indices: Indices of currently playing boxes
     - max_per_row: Maximum number of boxes per row
     - opacity: Float (0 to 1) indicating the opacity level of the box
+    - rotate: Float value for the rotation in radians (applied to the whole array)
     """
     # Determine the number of boxes
     num_boxes = len(active_array)
@@ -100,15 +94,20 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
     x_start = x_norm * WIDTH
     y_start = y_norm * HEIGHT
 
-    # Draw each box
+    # Create an intermediate surface for the box array
+    array_width = total_width
+    array_height = box_size * ((num_boxes + max_per_row - 1) // max_per_row)  # Calculate height based on rows
+    box_surface = pygame.Surface((array_width, array_height), pygame.SRCALPHA)
+
+    # Draw each box onto the intermediate surface
     for i in range(num_boxes):
         # Determine the row and column of the box
         row = i // max_per_row
         col = i % max_per_row
 
-        # Calculate the x and y positions for the current box
-        x_pos = x_start + col * box_size
-        y_pos = y_start + row * box_size
+        # Calculate the x and y positions for the current box on the surface
+        x_pos = col * box_size
+        y_pos = row * box_size
 
         # Determine the state of the box
         if active_array[i] == 1:
@@ -122,8 +121,19 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
             else:
                 state = "inactive"
 
-        # Draw the box with appropriate filled portion
-        draw_part_filled_box(x_pos, y_pos, box_size, fill_array[i], state, opacity)
+        # Draw the box with appropriate filled portion onto the surface
+        draw_part_filled_box(box_surface, x_pos, y_pos, box_size, fill_array[i], state, opacity)
+
+    # If rotation is not zero, rotate the surface while keeping the top-left corner anchored
+    if rotate != 0:
+        # Rotate the surface
+        rotated_surface = pygame.transform.rotate(box_surface, -rotate * 180 / np.pi)  # Convert radians to degrees
+
+        # Adjust the x and y positions by the offset to keep the top-left corner anchored
+        screen.blit(rotated_surface, (x_start - box_surface.get_height() * math.sin(rotate), y_start))
+    else:
+        # If no rotation, just blit the surface directly
+        screen.blit(box_surface, (x_start, y_start))
 
 
 def overlay_exes_on_box(x_norm, y_norm, width_norm, ex_array, playing_indices, max_per_row):
@@ -293,8 +303,8 @@ music.start()
 
 
 class GenotypeGridDrawing(np.ndarray):
-    def __new__(cls, position, width, opacity):
-        data = np.array([*position, width, opacity], dtype=float)
+    def __new__(cls, position, width, opacity, rotate=0.):
+        data = np.array([*position, width, opacity, rotate], dtype=float)
         obj = np.asarray(data).view(cls)
         return obj
 
@@ -310,6 +320,10 @@ class GenotypeGridDrawing(np.ndarray):
     def opacity(self):
         return float(self[3])
 
+    @property
+    def rotate(self):
+        return float(self[4])
+
     def __repr__(self):
         return (f"{self.__class__.__name__}(position={self.position}, "
                 f"width={self.width}, opacity={self.opacity})")
@@ -318,57 +332,155 @@ class GenotypeGridDrawing(np.ndarray):
         return self.__repr__()
 
 
+ROTATION_START = 610
+ROTATION_DUR = 14
+BEAT_FADE_DUR = 7
+PC_CHART_FADE_START = 625  # Note: Changing this messing things up!
+PC_CHART_FADE_DUR = 10
+
 beat_boxes = {
     "kick": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.06, 0.36), 0.26, 1)),
         (40, GenotypeGridDrawing((0.06, 0.36), 0.26, 1), 2),
         (50, GenotypeGridDrawing((0.06, 0.22), 0.26, 1), -2),
         (60, GenotypeGridDrawing((0.06, 0.1), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.06, 0.1), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.06, 0.1), 0.26, 0))
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.06, 0.1), 0.26, 0))
     ),
     "snare": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.37, 0.36), 0.26, 1)),
         (40, GenotypeGridDrawing((0.37, 0.36), 0.26, 1), 2),
         (50, GenotypeGridDrawing((0.37, 0.22), 0.26, 1), -2),
         (60, GenotypeGridDrawing((0.37, 0.1), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.37, 0.1), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.37, 0.1), 0.26, 0))
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.37, 0.1), 0.26, 0))
     ),
     "hihat": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.68, 0.36), 0.26, 1)),
         (40, GenotypeGridDrawing((0.68, 0.36), 0.26, 1), 2),
         (50, GenotypeGridDrawing((0.68, 0.22), 0.26, 1), -2),
         (60, GenotypeGridDrawing((0.68, 0.1), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.68, 0.1), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.68, 0.1), 0.26, 0))
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.68, 0.1), 0.26, 0))
     ),
     "kick_bass": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
         (56, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
         (60, GenotypeGridDrawing((0.06, 0.6), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.06, 0.6), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.6), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
     ),
     "snare_piano": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
         (128, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
         (132, GenotypeGridDrawing((0.37, 0.6), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.37, 0.6), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.6), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.37, 0.6), 0.26, 0)),
     ),
     "hihat_sax": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((0.06, 0.6), 0.26, 0)),
         (188, GenotypeGridDrawing((0.68, 0.6), 0.26, 0)),
         (192, GenotypeGridDrawing((0.68, 0.6), 0.26, 1)),
-        (620, GenotypeGridDrawing((0.68, 0.6), 0.26, 1)),
-        (630, GenotypeGridDrawing((0.68, 0.6), 0.26, 0)),
-    )
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.6), 0.26, 1)),
+        (ROTATION_START + BEAT_FADE_DUR, GenotypeGridDrawing((0.68, 0.6), 0.26, 0)),
+    ),
 }
 
+pieces = [
+    # LEFT
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1), 0.228, 0, rotate=math.pi / 2))
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.23 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
 
-ending_opacity = TimeVaryingParameter([0, 0, 1], [630, 10])
-s.fast_forward_to_beat(500)
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.23 + 0.07, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.23 + 0.07, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.23 + 0.07, 0.1), 0.228, 0, rotate=math.pi / 2)),
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.06, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.23 + 0.07, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.23 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.23 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
+    ),
+    # MIDDLE
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1), 0.228, 0, rotate=math.pi / 2))
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
+
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 + 0.07, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.5 + 0.07, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 + 0.07, 0.1), 0.228, 0, rotate=math.pi / 2)),
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.37, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 + 0.07, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.5 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
+    ),
+    # RIGHT
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1), 0.228, 0, rotate=math.pi / 2))
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.77 - 0.07 + 0.038, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
+
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 2 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.77 + 0.07, 0.1), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.77 + 0.07, 0.1), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.77 + 0.07, 0.1), 0.228, 0, rotate=math.pi / 2)),
+    ),
+    TimeVaryingParameter.from_points(
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 0)),
+        (ROTATION_START, GenotypeGridDrawing((0.68, 0.1 + 3 * 0.26/6 * WIDTH/HEIGHT), 0.26, 1)),
+        (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.77 + 0.07, 0.1 + 0.038 * 6 * WIDTH/HEIGHT), 0.228, 1, rotate=math.pi/2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR / 2, GenotypeGridDrawing((0.77 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 1, rotate=math.pi / 2)),
+        (PC_CHART_FADE_START + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.77 + 0.07, 0.1 + 0.038 * 6 * WIDTH / HEIGHT), 0.228, 0, rotate=math.pi / 2)),
+    ),
+]
+
+
+ending_opacity = TimeVaryingParameter([0, 0, 1], [PC_CHART_FADE_START, 10])
 saved_values = SaveVals.load_from_json("saved_vals.json")
 
 last_playing_index = 0
@@ -382,6 +494,13 @@ while running:
 
     playing_index = int(s.beat() // 0.5) % 24
     new_cycle = last_playing_index != playing_index == 0
+
+    for piece in pieces:
+        current_drawing = piece()
+        if current_drawing.opacity > 0:
+            draw_box_array(*current_drawing.position, current_drawing.width, (0,) * 6, (0,) * 6,
+                           [],  # only highlight if it's not a preimage
+                           6, opacity=current_drawing.opacity, rotate=current_drawing.rotate)
 
     for gene_box, gene_box_drawing_info in beat_boxes.items():
         current_drawing = gene_box_drawing_info()

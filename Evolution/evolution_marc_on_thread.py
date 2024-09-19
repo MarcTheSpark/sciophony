@@ -193,21 +193,22 @@ class SnareLoop(DrumLoop):
 
     # ----------------------------------- The Opening Pitchy stuff ------------------------------------------
 
+    held_chord = None
+
     def play_comp_chords(self):
         volumes_np = np.array(self.volumes())
         long_note_thresh = np.percentile(volumes_np, 75)
         short_note_thresh = np.percentile(volumes_np, 50)
-        held_chord = None
         for root_pitch, chord_config, volume, on_off in zip(self.root_pitches,
                                                             itertools.cycle(self.chord_configurations), self.volumes(),
                                                             self.beats()):
             if on_off and saver.save(int(volume >= short_note_thresh and random.random() < SnareLoop.play_prob_param()), "snare_piano"):
-                if held_chord:
-                    held_chord.end()
-                    held_chord = None
+                if SnareLoop.held_chord is not None:
+                    SnareLoop.held_chord.end()
+                    SnareLoop.held_chord = None
                 if volume >= long_note_thresh:
-                    held_chord = self.inst.start_chord([root_pitch + 12 + interval for interval in chord_config],
-                                                       remap(volume, 0.5, 1.0, 0, 1))
+                    SnareLoop.held_chord = self.inst.start_chord([root_pitch + 12 + interval for interval in chord_config],
+                                                                 remap(volume, 0.5, 1.0, 0, 1))
                     wait(self.pulse_length)
                 else:
                     self.inst.play_chord([root_pitch + 12 + interval for interval in chord_config],
