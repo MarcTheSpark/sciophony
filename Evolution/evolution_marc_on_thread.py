@@ -148,9 +148,10 @@ class DrumLoop(Individual):
 
 # ---------------------------------------- SET UP ENSEMBLE ------------------------------------------------
 
+SPEED_FACTOR = 1
 
 try:
-    s = Session(default_soundfont="MuseScore_General", tempo=190)
+    s = Session(default_soundfont="MuseScore_General", tempo=190 * SPEED_FACTOR)
 except ValueError:
     s = Session(tempo=190)
 # s.print_default_soundfont_presets()
@@ -182,7 +183,7 @@ class SnareLoop(DrumLoop):
     inst = piano
     end_inst = strings  # Used at the end when the beat switches reinterpret as harmony
     # controls the entrance of the comp harmony through play probability
-    play_prob_param = TimeVaryingParameter([0, 0, 1], [20, 80], clock=s, units="time")
+    play_prob_param = TimeVaryingParameter([0, 0, 1], [20 / SPEED_FACTOR, 80 / SPEED_FACTOR], clock=s, units="time")
 
     # intervals above root (cycled through)
     # The snare loop is also used to play piano comp chords, alternating between these two varieties
@@ -354,7 +355,7 @@ class HiHatLoop(DrumLoop):
     end_inst = marimba  # used for the arpeggios at the end
     min_pitch, max_pitch = 54, 78
     # Used to regulate the sax as it comes in
-    play_prob_param = TimeVaryingParameter([0, 0, 1], [50, 50], clock=s, units="time")
+    play_prob_param = TimeVaryingParameter([0, 0, 1], [50 / SPEED_FACTOR, 50 / SPEED_FACTOR], clock=s, units="time")
 
     # ---------------------- First part: sax melodies -----------------------
 
@@ -525,7 +526,7 @@ class EvolutionMusic(threading.Thread):
         self.hihat_pop.evolve_continuously(8, sex_prob=0.6, clock=s)
         self.kick_pop.evolve_continuously(9, sex_prob=0.6, clock=s)
 
-        while s.time() < 120:
+        while s.time() * SPEED_FACTOR < 120:
             # Play the beats
             self.playing_individuals["kick"] = self.kick_pop.get_individual(0.5)
             self.playing_individuals["snare"] = self.snare_pop.get_individual(0.5)
@@ -535,18 +536,18 @@ class EvolutionMusic(threading.Thread):
             fork(self.playing_individuals["hihat"].play_bar, args=(0.6,))
 
             # Gradually introduce melodic aspects
-            if s.time() >= 18:
+            if s.time() * SPEED_FACTOR >= 18:
                 self.playing_individuals["kick_bass"] = self.kick_pop.get_individual(0.25, 0.75)
                 if "kick_bass_preimage" not in saver.values_by_situation:
                     saver.save(self.playing_individuals["kick_bass"].genotype_array, "kick_bass_preimage" )
 
                 fork(self.playing_individuals["kick_bass"].play_bassline)
-            if s.time() >= 38:
+            if s.time() * SPEED_FACTOR >= 38:
                 self.playing_individuals["snare_piano"] = self.snare_pop.get_individual(0.25, 0.75)
                 if "snare_piano_preimage" not in saver.values_by_situation:
                     saver.save(self.playing_individuals["snare_piano"].genotype_array, "snare_piano_preimage")
                 fork(self.playing_individuals["snare_piano"].play_comp_chords)
-            if s.time() >= 60:
+            if s.time() * SPEED_FACTOR >= 60:
                 self.playing_individuals["hihat_sax"] = self.hihat_pop.get_individual(0.25, 0.75)
                 if "hihat_sax_preimage" not in saver.values_by_situation:
                     saver.save(self.playing_individuals["hihat_sax"].genotype_array, "hihat_sax_preimage")
@@ -667,14 +668,14 @@ class EvolutionMusic(threading.Thread):
             total_active_pcs = sum(hh.genotype_array[:24])
             if total_active_pcs == 0:
                 return 0
-            return np.dot(get_snare_harmonies_average(s.time()), hh.genotype_array[:24]) / total_active_pcs ** 0.5
+            return np.dot(get_snare_harmonies_average(s.time() * SPEED_FACTOR), hh.genotype_array[:24]) / total_active_pcs ** 0.5
 
         def kick_loop_bass_fitness_func(kl: KickLoop):
             """See hihat_loop_arpeggios_fitness_func"""
             total_active_pcs = sum(kl.genotype_array[:24])
             if total_active_pcs == 0:
                 return 0
-            return np.dot(get_snare_harmonies_average(s.time()), kl.activity_array(0.5)) / total_active_pcs ** 0.5
+            return np.dot(get_snare_harmonies_average(s.time() * SPEED_FACTOR), kl.activity_array(0.5)) / total_active_pcs ** 0.5
 
         self.snare_pop.stop_evolving()
         self.hihat_pop.stop_evolving()
@@ -687,15 +688,15 @@ class EvolutionMusic(threading.Thread):
         self.kick_pop.evolve_continuously(22, sex_prob=0.4, clock=s)
 
         # Fade out the melodic parts
-        SnareLoop.play_prob_param = TimeVaryingParameter([1, 0], [20], clock=s, units="time")
-        KickLoop.play_prob_param = TimeVaryingParameter([1, 0], [10], clock=s, units="time")
-        HiHatLoop.play_prob_param = TimeVaryingParameter([1, 0], [20], clock=s, units="time")
+        SnareLoop.play_prob_param = TimeVaryingParameter([1, 0], [20 / SPEED_FACTOR], clock=s, units="time")
+        KickLoop.play_prob_param = TimeVaryingParameter([1, 0], [10 / SPEED_FACTOR], clock=s, units="time")
+        HiHatLoop.play_prob_param = TimeVaryingParameter([1, 0], [20 / SPEED_FACTOR], clock=s, units="time")
 
-        end_play_prob_curve = TimeVaryingParameter([0, 0, 1], [10, 60], clock=s, units="time")
+        end_play_prob_curve = TimeVaryingParameter([0, 0, 1], [10 / SPEED_FACTOR, 60 / SPEED_FACTOR], clock=s, units="time")
 
         # Maybe the volumes control the timing completely
 
-        while s.time() < 360:
+        while s.time() * SPEED_FACTOR < 360:
             end_play_prob = end_play_prob_curve()
             # kick_loop = self.kick_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
             # snare_loop = self.snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
