@@ -31,17 +31,19 @@ class PlanetMusic(threading.Thread):
         self.s.timing_policy = "absolute"
         if self.to_logic:
             drums = self.s.new_midi_part("Drums", "IAC Driver Bus 1", num_channels=1)
-            drums2 = self.s.new_midi_part("Latin Drums", "IAC Driver Bus 1", start_channel=1, num_channels=1)
-            mercury_inst = self.s.new_midi_part("marimba", "IAC Driver Bus 2")
-            venus_inst = self.s.new_midi_part("Montain Flute", "IAC Driver Bus 3")
-            earth_inst = self.s.new_midi_part("Atmosphere", "IAC Driver Bus 4")
-            mars_inst = self.s.new_midi_part("Strings", "IAC Driver Bus 5")
+            drums2 = self.s.new_midi_part("Drums2", "IAC Driver Bus 1", start_channel=1, num_channels=1)
+            mercury_inst = self.s.new_part("marimba")
+            venus_inst = self.s.new_part("Shakuhachi 2")
+            mars_inst = self.s.new_part("cello")
+            earth_inst = self.s.new_midi_part("Atmosphere", "IAC Driver Bus 5")
             jupiter_inst = self.s.new_midi_part("Square Wave", "IAC Driver Bus 6")
-            saturn_inst = self.s.new_midi_part("Bass 1", "IAC Driver Bus 7")
-            neptune_inst = self.s.new_midi_part("Bass 2", "IAC Driver Bus 8")
-            uranus_inst = self.s.new_midi_part("Bass 3", "IAC Driver Bus 9")
+            saturn_inst = self.s.new_part("Acoustic Bass ")
+            neptune_inst = self.s.new_part("Acoustic Bass")
+            uranus_inst = self.s.new_part("Acoustic Bass ")
+            piano = self.s.new_part("piano")
+            bass = self.s.new_part("acoustic bass")
+            dguitar = self.s.new_part("DistortionGuitar")
         else:
-            drums = drums2 = self.s.new_part("POWER")
             mercury_inst = self.s.new_part("marimba")
             venus_inst = self.s.new_part("Shakuhachi 2")
             mars_inst = self.s.new_part("cello")
@@ -50,7 +52,10 @@ class PlanetMusic(threading.Thread):
             saturn_inst = self.s.new_part("Acoustic Bass ")
             neptune_inst = self.s.new_part("Acoustic Bass")
             uranus_inst = self.s.new_part("Acoustic Bass ")
-
+            piano = self.s.new_part("piano")
+            bass = self.s.new_part("acoustic bass")
+            dguitar = self.s.new_part("DistortionGuitar")
+            drums = drums2 = self.s.new_part("POWER")
 
         self.orbit_beats.extend([
             OrbitBeat(drums2, "mercury", 75, 0.6, 0.25, play_expansion_factor=5),
@@ -66,14 +71,14 @@ class PlanetMusic(threading.Thread):
         ])
 
         self.orbit_melodies.extend([
-            OrbitMelody(mercury_inst, "mercury", 1, 0, volume_range=(0.1, 0.6)),
-            OrbitMelody(venus_inst, "venus", 1, 0, volume_range=(0.1, 0.5)),
-            OrbitMelody(earth_inst, "earth", 1, 0),
-            OrbitMelody(mars_inst, "mars", 3, 1, volume_range=(0.2, 0.8), play_expansion_factor=2.5, trail_expansion_factor=2),
-            OrbitMelody(jupiter_inst, "jupiter", 1, 0, volume_range=(0.2, 0.8), play_expansion_factor=1.6, trail_expansion_factor=1.3),
-            OrbitMelody(saturn_inst, "saturn", 4, 2, volume_range=(0.2, 0.8)),
-            OrbitMelody(uranus_inst, "uranus", 4, 1, volume_range=(0.2, 0.8), play_expansion_factor=3, trail_expansion_factor=2),
-            OrbitMelody(neptune_inst, "neptune", 4, 0, volume_range=(0.2, 0.8), play_expansion_factor=3, trail_expansion_factor=2),
+            OrbitMelody(mercury_inst, "mercury", 1, 0, volume_scale=0.5),
+            OrbitMelody(venus_inst, "venus", 1, 0, volume_scale=0.3),
+            OrbitMelody(earth_inst, "earth", 1, 0,),
+            OrbitMelody(mars_inst, "mars", 3, 1, volume_scale=0.6),
+            OrbitMelody(jupiter_inst, "jupiter", 1, 0, volume_scale=0.3, play_expansion_factor=1.6, trail_expansion_factor=1.3),
+            OrbitMelody(saturn_inst, "saturn", 4, 2),
+            OrbitMelody(uranus_inst, "uranus", 4, 1, play_expansion_factor=3, trail_expansion_factor=2),
+            OrbitMelody(neptune_inst, "neptune", 4, 0, play_expansion_factor=3, trail_expansion_factor=2),
         ])
 
         for b in self.orbit_beats:
@@ -95,21 +100,8 @@ class PlanetMusic(threading.Thread):
         self.orbit_beats[1].muted = False
         self.orbit_beats[2].muted = False
         self.orbit_beats[3].muted = False
-        wait(20)
-        self.orbit_melodies[7].muted = False
-        self.orbit_melodies[6].muted = False
-        self.orbit_melodies[5].muted = False
-        wait(40)
-        self.orbit_melodies[4].muted = False
-        wait(20)
-        self.orbit_melodies[3].muted = False
-        wait(20)
-        self.orbit_melodies[2].muted = False
-        wait(20)
-        self.orbit_melodies[1].muted = False
-        wait(20)
+        wait(8)
         self.orbit_melodies[0].muted = False
-
 #         self.orbit_melodies[4].muted = False
 #         self.orbit_melodies[5].muted = False
 #         self.orbit_melodies[7].muted = False
@@ -133,4 +125,4 @@ class PlanetMusic(threading.Thread):
 
 
 if __name__ == '__main__':
-    PlanetMusic(to_logic=True).run()
+    PlanetMusic(to_logic=False).run()

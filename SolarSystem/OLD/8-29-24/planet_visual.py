@@ -19,18 +19,6 @@ def solar_system_state():
     return get_solar_system_state(planet_music.s.beat())
 
 
-FRAME_RATE = 30
-
-# Global constants
-WINDOW_SCALE = 0.4
-WIDTH = 1920 * WINDOW_SCALE
-HEIGHT = 1080 * WINDOW_SCALE
-pixels_per_au = 180 * WINDOW_SCALE
-pixels_per_au_range = (13.8 * WINDOW_SCALE, 2000 * WINDOW_SCALE)
-MAGNIFIED_PIXELS_PER_AU = 35 * WINDOW_SCALE
-SUN_SIZE_SCALE_CONSTANT = 1 / 6000
-PLANET_SIZE_SCALE_CONSTANT = 1 / 2500
-
 # Colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
@@ -50,6 +38,16 @@ PITCH_CLASS_COLORS = [
     np.array([192, 192, 192]),  # Silver
     np.array([255, 20, 147])  # Deep Pink
 ]
+
+# Global constants
+WINDOW_SCALE = 1
+WIDTH = 1920 * WINDOW_SCALE
+HEIGHT = 1080 * WINDOW_SCALE
+pixels_per_au = 180 * WINDOW_SCALE
+pixels_per_au_range = (13.8 * WINDOW_SCALE, 2000 * WINDOW_SCALE)
+MAGNIFIED_PIXELS_PER_AU = 35 * WINDOW_SCALE
+SUN_SIZE_SCALE_CONSTANT = 1 / 6000
+PLANET_SIZE_SCALE_CONSTANT = 1 / 2500
 
 PLANETS = ["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"]
 
@@ -328,6 +326,7 @@ while running:
                      HEIGHT // 2 - mag_glass_image_resized.get_height() * MAGNIFIER_LENS_CENTER_PROPORTION[1]))
 
     pygame.display.flip()
-    clock.tick(FRAME_RATE)
+    clock.tick(60)
 
 pygame.quit()
+exit()

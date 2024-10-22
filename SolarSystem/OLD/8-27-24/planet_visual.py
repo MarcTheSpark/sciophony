@@ -3,7 +3,7 @@ import threading
 import numpy as np
 from solar_system_functions import get_solar_system_state
 from marciano.solar_system_model2 import object_diameters_km
-from planets_music import PlanetMusic
+from planets_music2 import PlanetMusic
 import time
 import pygame
 import random
@@ -18,18 +18,6 @@ def solar_system_state():
 #     planet_music.s.release_from_suspension()
     return get_solar_system_state(planet_music.s.beat())
 
-
-FRAME_RATE = 30
-
-# Global constants
-WINDOW_SCALE = 0.4
-WIDTH = 1920 * WINDOW_SCALE
-HEIGHT = 1080 * WINDOW_SCALE
-pixels_per_au = 180 * WINDOW_SCALE
-pixels_per_au_range = (13.8 * WINDOW_SCALE, 2000 * WINDOW_SCALE)
-MAGNIFIED_PIXELS_PER_AU = 35 * WINDOW_SCALE
-SUN_SIZE_SCALE_CONSTANT = 1 / 6000
-PLANET_SIZE_SCALE_CONSTANT = 1 / 2500
 
 # Colors
 BLACK = (0, 0, 0)
@@ -50,6 +38,16 @@ PITCH_CLASS_COLORS = [
     np.array([192, 192, 192]),  # Silver
     np.array([255, 20, 147])  # Deep Pink
 ]
+
+# Global constants
+WINDOW_SCALE = 0.3
+WIDTH = 1920 * WINDOW_SCALE
+HEIGHT = 1080 * WINDOW_SCALE
+pixels_per_au = 180 * WINDOW_SCALE
+pixels_per_au_range = (13.8 * WINDOW_SCALE, 2000 * WINDOW_SCALE)
+MAGNIFIED_PIXELS_PER_AU = 35 * WINDOW_SCALE
+SUN_SIZE_SCALE_CONSTANT = 1 / 6000
+PLANET_SIZE_SCALE_CONSTANT = 1 / 2500
 
 PLANETS = ["mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune"]
 
@@ -75,7 +73,7 @@ mag_glass_image = pygame.image.load('MagCircle.png')
 
 # Create a secondary surface (canvas) for drawing objects
 trails_canvas = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-FADE_ALPHA = 2
+FADE_ALPHA = 5
 FADE_SURFACE = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
 FADE_SURFACE.fill((0, 0, 0, FADE_ALPHA))
 planet_trail_radius_muls = {planet: 0 for planet in PLANETS}
@@ -285,10 +283,7 @@ while running:
 
     for orbit_melody in planet_music.orbit_melodies:
         if orbit_melody.just_played_pc is not None:
-            planet_radius_muls[orbit_melody.planet] = max(planet_radius_muls[orbit_melody.planet],
-                                                          orbit_melody.play_expansion_factor)
-            planet_trail_radius_muls[orbit_melody.planet] = max(planet_trail_radius_muls[orbit_melody.planet],
-                                                                orbit_melody.trail_expansion_factor)
+            planet_trail_radius_muls[orbit_melody.planet] = 1.2
             planet_colors[orbit_melody.planet] = (PITCH_CLASS_COLORS[orbit_melody.just_played_pc] *
                                                   orbit_melody.just_played_volume ** 1.7)
             orbit_melody.just_played_pc = None
@@ -328,6 +323,6 @@ while running:
                      HEIGHT // 2 - mag_glass_image_resized.get_height() * MAGNIFIER_LENS_CENTER_PROPORTION[1]))
 
     pygame.display.flip()
-    clock.tick(FRAME_RATE)
+    clock.tick(60)
 
 pygame.quit()

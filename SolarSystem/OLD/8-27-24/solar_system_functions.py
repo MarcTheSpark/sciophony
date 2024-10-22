@@ -1,13 +1,11 @@
 import dataclasses
 from typing import Sequence
+
 from marciano.solar_system_model2 import SolarSystem
 import itertools
 from scamp import *
 from scamp_extensions.utilities import remap
 import math
-from global_constants import DAYS_PER_BEAT
-
-
 
 # first run: calculate the solar system model for the next 100000 days
 # ss = SolarSystem(0, 100000)
@@ -15,6 +13,8 @@ from global_constants import DAYS_PER_BEAT
 
 # subsequent runs: load the precalculated solarSystem model from memory
 ss = SolarSystem.load_from_npy("solarSystemModel.npz")
+
+DAYS_PER_BEAT = 200
 
 
 def days_to_beats(num_days):
@@ -86,25 +86,25 @@ planet_average_distances = {
 }
 
 planet_pitch_bases = {
-    "mercury": 95,
-    "venus": 82,
-    "earth": 70,
+    "mercury": 100,
+    "venus": 90,
+    "earth": 80,
     "mars": 60,
     "jupiter": 45,
-    "saturn": 30,
-    "uranus": 30,
-    "neptune": 30
+    "saturn": 33,
+    "uranus": 28,
+    "neptune": 24
 }
 
 planet_pitch_ranges = {
     "mercury": 12,
-    "venus": 12,
+    "venus": 20,
     "earth": 20,
     "mars": 20,
     "jupiter": 20,
-    "saturn": 25,
-    "uranus": 25,
-    "neptune": 25
+    "saturn": 20,
+    "uranus": 20,
+    "neptune": 20
 }
 
 planet_days_revolution = {
@@ -152,15 +152,13 @@ class OrbitMelody:
     sampling_period: int
     sampling_phase: int
     angle_filter: float = math.pi
-    sample_duration: float = 0.25
-    volume_range: tuple[float, float] = (0, 1)
+    sample_duration: float = 0.1
+    volume_scale: float = 1
     volume_basis: str = "xVelocity"  # one of "angleDiff", "xVelocity", or "yVelocity"
     pitch_base: float = None  # defaults to dictionary lookup
     pitch_range: float = None  # defaults to dictionary lookup
     muted: bool = False
     # visual properties
-    play_expansion_factor: float = 2
-    trail_expansion_factor: float = 1.5
     just_played_pc: int = dataclasses.field(default=None, init=False)
     just_played_volume: float = None
 
@@ -182,14 +180,13 @@ class OrbitMelody:
             # see https://stackoverflow.com/a/2007279/46617
             angle_diff = abs(math.atan2(math.sin(angle_planet - angle_earth), math.cos(angle_planet - angle_earth)))
             pitch = round((x / planet_average_distances[self.planet] * self.pitch_range) + self.pitch_base)
-            volume_0_to_1 = abs(vx) / max_planet_speeds[self.planet] if self.volume_basis == "xVelocity" else \
+            volume = abs(vx) / max_planet_speeds[self.planet] if self.volume_basis == "xVelocity" else \
                 abs(vy) / max_planet_speeds[self.planet] if self.volume_basis == "yVelocity" else \
                 1 - angle_diff / self.angle_filter
-            volume = remap(volume_0_to_1, *self.volume_range, 0, 1)
             if i % self.sampling_period == self.sampling_phase and angle_diff <= self.angle_filter and not self.muted:
                 self.just_played_pc = pitch % 12
                 self.just_played_volume = volume
-                self.inst.play_note(pitch, volume, self.sample_duration)
+                self.inst.play_note(pitch, volume * self.volume_scale, self.sample_duration)
             else:
                 wait(self.sample_duration)
 
@@ -207,7 +204,7 @@ class OrbitBeat:
     volume: int
     note_dur: int
     play_angles: Sequence[float] = (0,)
-    sample_duration: float = 0.25
+    sample_duration: float = 0.03
     muted: bool = False
     # visual properties
     play_expansion_factor: float = 4
@@ -242,7 +239,7 @@ class ProximityAlert:
     planet_2: str
     distance_threshold: float  # mapped from 0 to 1, where 0 is the closest they get and 1 is the farthest
     pitch: float
-    sample_duration: float = 0.25
+    sample_duration: float = 0.1
     muted: bool = False
     alerting: bool = dataclasses.field(default=False, init=False)
     # visual properties
