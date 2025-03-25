@@ -1,5 +1,28 @@
+"""
+Okay, so here's where it got really messy. The first step of putting the music on a separate thread was done to
+facilitate having an animation run alongside. But the issue was that the animation sometimes needed to peek into the
+future in order to show the grid that was about to be played by a part as it was fading in, and this was an issue
+because sometimes parts were governed by random probabilities of playing or not playing a note. Calculating those
+probabilities early would mess up the evolution process (by changing the random state), but we need to know them early
+in order to visualize.
+
+This led me to create the SaveVals class, which I used to save the random values from a play-though so that they could
+be known in advance when played again with visualization.
+
+This worked...until we started wanting to mess with the visualization in Reaper --- removing measures here and there
+for pacing. This led to difficulties, since it's hard to skip a measure in an evolutionary process. So that's why I
+created the Recorder and EvolutionMusicRecording classes to just record exactly what individuals (i.e. the specific
+genomes) were active at a given time. This made it easy to just skip a few measures.
+
+So when you give EvolutionMusic a snapshots_recording_file, it saves and pickles a recording of a bunch of snapshots
+of which individuals and disturbances are active at agny given time, and this can be read and played by
+evolution_play_recorded.
+
+The whole thing was a mess. I think, if I had this to do again, I would precalculate the entire evolutionary process
+ahead of time, instead of having it run live.
+"""
+
 import cmath
-import functools
 import random
 import itertools
 import math
@@ -145,10 +168,14 @@ class DrumLoop(Individual):
         return np.array([on_off * ((1 - on_off_vs_volume_weighted) + on_off_vs_volume_weighted * volume)
                          for on_off, volume in zip(self.beats(), self.volumes())])
 
+    def __reduce__(self):
+        # Return a tuple containing the constructor and arguments to recreate the object
+        return self.__class__,  self.genotype_array
+
 
 # ---------------------------------------- SET UP ENSEMBLE ------------------------------------------------
 
-SPEED_FACTOR = 1
+SPEED_FACTOR = 1  # * 178 / 190
 
 try:
     s = Session(default_soundfont="MuseScore_General", tempo=190 * SPEED_FACTOR)
@@ -192,11 +219,42 @@ class SnareLoop(DrumLoop):
         [4, 9, 14],  # major (6, 9)
     ]
 
+    def __init__(self, *genotype: float, playback_mask=None, harmony_playback_record=None):
+        super().__init__(*genotype)
+        self.playback_mask = playback_mask
+        self.harmony_playback_record = harmony_playback_record
+
     # ----------------------------------- The Opening Pitchy stuff ------------------------------------------
 
     held_chord = None
 
     def play_comp_chords(self):
+        if self.playback_mask is not None:
+            volumes_np = np.array(self.volumes())
+            long_note_thresh = np.percentile(volumes_np, 75)
+            short_note_thresh = np.percentile(volumes_np, 50)
+            for root_pitch, chord_config, volume, on_off, coin_flip in zip(self.root_pitches,
+                                                                           itertools.cycle(self.chord_configurations), self.volumes(),
+                                                                           self.beats(), self.playback_mask):
+                if on_off and coin_flip:
+                    if SnareLoop.held_chord is not None:
+                        SnareLoop.held_chord.end()
+                        SnareLoop.held_chord = None
+                    if volume >= long_note_thresh:
+                        SnareLoop.held_chord = self.inst.start_chord(
+                            [root_pitch + 12 + interval for interval in chord_config],
+                            remap(volume, 0.5, 1.0, 0, 1))
+                        wait(self.pulse_length)
+                    else:
+                        self.inst.play_chord([root_pitch + 12 + interval for interval in chord_config],
+                                             remap(volume, 0.5, 1.0, 0, 1),
+                                             self.pulse_length, "staccato")
+                else:
+                    wait(self.pulse_length)
+        else:
+            self._play_comp_chords_first_time_random()
+
+    def _play_comp_chords_first_time_random(self):
         volumes_np = np.array(self.volumes())
         long_note_thresh = np.percentile(volumes_np, 75)
         short_note_thresh = np.percentile(volumes_np, 50)
@@ -219,6 +277,7 @@ class SnareLoop(DrumLoop):
                 if not on_off:
                     saver.save(0, "snare_piano")
                 wait(self.pulse_length)
+        self.playback_mask = saver.values_by_situation["snare_piano"][-len(self.root_pitches):]
 
     # -------------------------------- The ending: beat switches reinterpreted as pitch classes -----------------------
 
@@ -227,6 +286,14 @@ class SnareLoop(DrumLoop):
         Plays the chord progression from measure 1 to measure 2 as a set of horizontal voice-leadings
         that are not necessarily aligned, but that become more aligned over time.
         """
+        if hasattr(self, 'harmony_playback_record') and self.harmony_playback_record is not None:
+            for pitch_pairs, change_points in zip(*self.harmony_playback_record):
+                fork(self._play_harmony_voice, args=(pitch_pairs, change_points))
+            wait_for_children_to_finish()
+        else:
+            self._play_harmony_first_time_random()
+
+    def _play_harmony_first_time_random(self):
         voices = []
         note_change_points = []
         for pitch_pairs in self.get_voices():
@@ -237,6 +304,7 @@ class SnareLoop(DrumLoop):
                 fork(self._play_harmony_voice, args=(pitch_pairs, change_points))
         saver.save([voices, note_change_points], "harmony_voices")
         wait_for_children_to_finish()
+        self.harmony_playback_record = voices, note_change_points
 
     def _play_harmony_voice(self, pitches, note_start_points):
         """Plays a single voice leading"""
@@ -348,6 +416,16 @@ class SnareLoop(DrumLoop):
         # Atan warp the output
         return atan_warp(consonant_count, -10, 10, 0, 1)
 
+    def __reduce__(self):
+        # Return a tuple containing the constructor and arguments to recreate the object
+        return self._reconstruct, (self.genotype_array, self.playback_mask, self.harmony_playback_record)
+
+    @staticmethod
+    def _reconstruct(genotype_array, playback_mask, harmony_playback_record):
+        # This method reconstructs the object from the keyword arguments
+        return SnareLoop(*genotype_array, playback_mask=playback_mask,
+                         harmony_playback_record=harmony_playback_record)
+
 
 class HiHatLoop(DrumLoop):
     drum_pitch = 42
@@ -357,9 +435,33 @@ class HiHatLoop(DrumLoop):
     # Used to regulate the sax as it comes in
     play_prob_param = TimeVaryingParameter([0, 0, 1], [50 / SPEED_FACTOR, 50 / SPEED_FACTOR], clock=s, units="time")
 
+    def __init__(self, *genotype: float, playback_mask=None, coin_flipped_arpeggio_pitches=None):
+        super().__init__(*genotype)
+        self.playback_mask = playback_mask
+        self.coin_flipped_arpeggio_pitches = coin_flipped_arpeggio_pitches
+
     # ---------------------- First part: sax melodies -----------------------
 
     def play_melody(self):
+        if self.playback_mask is not None:
+            pitch = self.root_pitches[0] + 15
+            interval_pattern = itertools.cycle([-2, -1, -3, 4])
+            for root_pitch, volume, on_off, coin_flip in zip(self.root_pitches, self.volumes(), self.beats(), self.playback_mask):
+                pitch = wrap_to_range(pitch, self.min_pitch, self.max_pitch)
+                if on_off and coin_flip:
+                    for _ in range(2):
+                        self.inst.play_note(pitch,
+                                            remap(volume, 0.2, 1.0, 0, 1),
+                                            self.pulse_length / 2)
+                        pitch += next(interval_pattern)
+                else:
+                    for _ in range(2):
+                        next(interval_pattern)
+                    wait(self.pulse_length)
+        else:
+            self._play_melody_first_time_random()
+
+    def _play_melody_first_time_random(self):
         pitch = self.root_pitches[0] + 15
         interval_pattern = itertools.cycle([-2, -1, -3, 4])
         for root_pitch, volume, on_off in zip(self.root_pitches, self.volumes(), self.beats()):
@@ -376,6 +478,7 @@ class HiHatLoop(DrumLoop):
                 for _ in range(2):
                     next(interval_pattern)
                 wait(self.pulse_length)
+        self.playback_mask = saver.values_by_situation["hihat_sax"][-len(self.beats()):]
 
     # ------------------------- Ending marimba Arpeggios ---------------------------
 
@@ -409,6 +512,13 @@ class HiHatLoop(DrumLoop):
         return pitches
 
     def play_arpeggios(self, pc_octave=72):
+        if self.coin_flipped_arpeggio_pitches is None:
+            self._play_arpeggios_first_time_random(pc_octave)
+        else:
+            for pitch, volume in zip(self.coin_flipped_arpeggio_pitches, self.volumes()):
+                self.end_inst.play_note(pitch, volume ** 0.5, self.pulse_length)
+        
+    def _play_arpeggios_first_time_random(self, pc_octave=72):
         # Cycle through pcs (in reverse), going down to next closest pc each time
         # Jump up an octave (new hi volume) with every large volume value
         pitches_played = []
@@ -420,12 +530,29 @@ class HiHatLoop(DrumLoop):
                 wait(self.pulse_length)
                 pitches_played.append(None)
         saver.save(pitches_played, "end_arpeggio_pitches")
+        self.coin_flipped_arpeggio_pitches = pitches_played
+
+    def __reduce__(self):
+        # Return a tuple containing the constructor and arguments to recreate the object
+        return self._reconstruct, (self.genotype_array, self.playback_mask,
+                                   self.coin_flipped_arpeggio_pitches)
+
+    @staticmethod
+    def _reconstruct(genotype_array, playback_mask, coin_flipped_arpeggio_pitches):
+        # This method reconstructs the object from the keyword arguments
+        return HiHatLoop(*genotype_array, playback_mask=playback_mask,
+                         coin_flipped_arpeggio_pitches=coin_flipped_arpeggio_pitches)
 
 
 class KickLoop(DrumLoop):
     drum_pitch = 36
     inst = bass
     play_prob_param = TimeVaryingParameter(1, clock=s, units="time")
+
+    def __init__(self, *genotype: float, playback_mask=None, coin_flipped_end_bass_line=None):
+        super().__init__(*genotype)
+        self.playback_mask = playback_mask
+        self.coin_flipped_end_bass_pcs = coin_flipped_end_bass_line
 
     # --------------------- First part: bass line following the circle of fourths (self.root_pitches) ----------------
 
@@ -434,12 +561,27 @@ class KickLoop(DrumLoop):
         The on/off beat switches determine when to play, so we hear segments on a circle of fourths with parts
         cut out of it.
         """
+        if self.playback_mask is None:
+            self._play_bassline_first_time_random()
+        else:
+            for root_pitch, volume, on_off, flip in zip(self.root_pitches, self.volumes(), self.beats(), self.playback_mask):
+                if on_off and flip:
+                    self.inst.play_note(root_pitch, remap(volume, 0.5, 1.0, 0, 1),
+                                        self.pulse_length)
+                else:
+                    wait(self.pulse_length)
+
+    def _play_bassline_first_time_random(self):
+        flips = []
         for root_pitch, volume, on_off in zip(self.root_pitches, self.volumes(), self.beats()):
             if on_off and random.random() < KickLoop.play_prob_param():
+                flips.append(True)
                 self.inst.play_note(root_pitch, remap(volume, 0.5, 1.0, 0, 1),
                                     self.pulse_length)
             else:
+                flips.append(False)
                 wait(self.pulse_length)
+        self.playback_mask = flips
 
     # --------------------- Ending part: one (longer) note per bar ----------------
 
@@ -449,39 +591,63 @@ class KickLoop(DrumLoop):
         to determine which pitch class to play in the first bar (activity_array[:12]) and second bar
         (activity_array[12:]). The selected value (0-11) determines the pitch class and the metric position.
         """
+        if self.coin_flipped_end_bass_pcs:
+            for pitch_class in self.coin_flipped_end_bass_pcs:
+                if pitch_class is None:   # got skipped randomly
+                    wait(12 * self.pulse_length)
+                else:
+                    wait(pitch_class * self.pulse_length)
+                    self.inst.play_note(pitch_class + 36, 1, (12 - pitch_class) * self.pulse_length)
+        else:
+            self._play_bassline_end_first_time_random()
+
+    def _play_bassline_end_first_time_random(self):
         activities = self.activity_array(0.5)
 
-        bass_line_notes_played = []
+        bass_line_pcs_played = []
 
         if sum(activities[:12]) > 0 and random.random() < end_play_prob ** 0.5:
             first_pitch = random.choices(range(0, 12), weights=activities[:12])[0]
             wait(first_pitch * self.pulse_length)
             self.inst.play_note(first_pitch + 36, 1, (12 - first_pitch) * self.pulse_length)
-            bass_line_notes_played.append(first_pitch)
+            bass_line_pcs_played.append(first_pitch)
         else:
             # wait(self.bar_duration)
             wait(12 * self.pulse_length)
-            bass_line_notes_played.append(None)
+            bass_line_pcs_played.append(None)
 
         if sum(activities[12:]) > 0 and random.random() < end_play_prob ** 0.5:
             second_pitch = random.choices(range(0, 12), weights=activities[12:])[0]
             wait(second_pitch * self.pulse_length)
             self.inst.play_note(second_pitch + 36, 1, (12 - second_pitch) * self.pulse_length)
-            bass_line_notes_played.append(second_pitch)
+            bass_line_pcs_played.append(second_pitch)
         else:
             # wait(self.bar_duration)
             wait(12 * self.pulse_length)
-            bass_line_notes_played.append(None)
+            bass_line_pcs_played.append(None)
 
-        saver.save(bass_line_notes_played, "bass_pitches_end")
+        saver.save(bass_line_pcs_played, "bass_pitches_end")
+        self.coin_flipped_end_bass_pcs = bass_line_pcs_played
+        
+    def __reduce__(self):
+        # Return a tuple containing the constructor and arguments to recreate the object
+        return self._reconstruct, (self.genotype_array, self.playback_mask, self.coin_flipped_end_bass_pcs)
+
+    @staticmethod
+    def _reconstruct(genotype_array, playback_mask, coin_flipped_end_bass_line):
+        # This method reconstructs the object from the keyword arguments
+        return KickLoop(*genotype_array, playback_mask=playback_mask,
+                        coin_flipped_end_bass_line=coin_flipped_end_bass_line)
+
+
+# Populations are initialized with a quiet genome consisting of all off switches, and all low volumes
+quiet_genome = [0 for _ in range(DrumLoop.cycle_length)] + [0.1 for _ in range(DrumLoop.cycle_length)]
 
 
 class EvolutionMusic(threading.Thread):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, snapshots_recording_file=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Populations are initialized with a quiet genome consisting of all off switches, and all low volumes
-        quiet_genome = [0 for _ in range(DrumLoop.cycle_length)] + [0.1 for _ in range(DrumLoop.cycle_length)]
 
         # Fitness functions focus on alignment with the beat strength arrays, and on targeting the right busyness for
         # the respective parts (high for hihat, medium for snare, low for kick)
@@ -516,17 +682,50 @@ class EvolutionMusic(threading.Thread):
 
         self.playing_individuals = {}
         self.disturbances = np.zeros(24)
+        self.snapshots_recording_file = snapshots_recording_file
 
     def run(self):
         global end_play_prob
         threading.current_thread().__clock__ = s
+        recorder = Recorder(self)
+        if self.snapshots_recording_file is None:
+            recorder.on = False
 
+        # BEGIN INTRO
+        rand_state = random.getstate()
+        s.tempo_history.go_to_beat(-3 * DrumLoop.bar_duration)
+        self.playing_individuals["kick"] = KickLoop(*quiet_genome)
+        fork(recorder.take_snapshots, [DrumLoop.bar_duration])
+        wait(DrumLoop.bar_duration)
+
+        self.playing_individuals["kick"] = KickLoop(*quiet_genome).mutate()
+        self.playing_individuals["snare"] = SnareLoop(*quiet_genome)
+        self.playing_individuals["hihat"] = HiHatLoop(*quiet_genome)
+        fork(recorder.take_snapshots, [DrumLoop.bar_duration])
+        self.playing_individuals["kick"].play_bar()
+
+        self.playing_individuals["kick"] = KickLoop(*quiet_genome).mutate().mutate()
+        self.playing_individuals["snare"] = SnareLoop(*quiet_genome).mutate()
+        self.playing_individuals["hihat"] = HiHatLoop(*quiet_genome)
+        fork(recorder.take_snapshots, [DrumLoop.bar_duration])
+        fork(self.playing_individuals["kick"].play_bar)
+        fork(self.playing_individuals["snare"].play_bar)
+        wait(DrumLoop.bar_duration)
+
+
+        # RESET TO TIME 0 AND RANDOMNESS
+        random.setstate(rand_state)
+
+        # TRUE BEGINNING
+        s.fast_forward_to_beat(DrumLoop.bar_duration)   # skip the first bar, because it wasn't needed
         # Evolution is slow
         self.snare_pop.evolve_continuously(7, sex_prob=0.6, clock=s)
         self.hihat_pop.evolve_continuously(8, sex_prob=0.6, clock=s)
         self.kick_pop.evolve_continuously(9, sex_prob=0.6, clock=s)
 
         while s.time() * SPEED_FACTOR < 120:
+            if s.beat() == 312:
+                s.fast_forward_in_beats(DrumLoop.bar_duration * 6)
             # Play the beats
             self.playing_individuals["kick"] = self.kick_pop.get_individual(0.5)
             self.playing_individuals["snare"] = self.snare_pop.get_individual(0.5)
@@ -552,6 +751,8 @@ class EvolutionMusic(threading.Thread):
                 if "hihat_sax_preimage" not in saver.values_by_situation:
                     saver.save(self.playing_individuals["hihat_sax"].genotype_array, "hihat_sax_preimage")
                 fork(self.playing_individuals["hihat_sax"].play_melody)
+
+            fork(recorder.take_snapshots, [DrumLoop.bar_duration])
 
             wait(DrumLoop.bar_duration)
 
@@ -614,6 +815,7 @@ class EvolutionMusic(threading.Thread):
             fork(self.playing_individuals["snare_piano"].play_comp_chords)
             self.playing_individuals["hihat_sax"] = self.hihat_pop.get_individual(0.25, 0.75)
             fork(self.playing_individuals["hihat_sax"].play_melody)
+            fork(recorder.take_snapshots, [DrumLoop.bar_duration])
 
             wait(DrumLoop.bar_duration)
 
@@ -732,10 +934,104 @@ class EvolutionMusic(threading.Thread):
             fork(self.playing_individuals["snare_harmony"].play_harmony)
             fork(self.playing_individuals["hihat_marimba"].play_arpeggios)
             fork(self.playing_individuals["kick_end"].play_bassline_end)
+            fork(recorder.take_snapshots, [DrumLoop.bar_duration])
 
             wait(DrumLoop.bar_duration)
+        if self.snapshots_recording_file:
+            recorder.save_to_pickle(self.snapshots_recording_file)
+
+
+class Recorder:
+    def __init__(self, evolution_music: EvolutionMusic, frame_rate=60):
+        self.snap_shots = []
+        self.em: EvolutionMusic = evolution_music
+        self.frame_rate = frame_rate
+        self.on = True
+
+    def take_snapshot(self):
+        this_snap_shot = (
+            s.beat(),
+            s.time(),
+            self.em.playing_individuals.copy(),
+            self.em.disturbances.copy(),
+            s.is_fast_forwarding()
+        )
+        self.snap_shots.append(this_snap_shot)
+
+    def take_snapshots(self, how_long):
+        if not self.on:
+            return
+        i = 0
+        start = current_clock().beat()
+        while current_clock().beat() - start < how_long:
+            if i % 10 == 0:
+                print(f"{len(self.snap_shots)} frames saved; {s.beat()=}, {s.time()=}")
+            self.take_snapshot()
+            wait(1/self.frame_rate * s.tempo / 60)
+            i += 1
+
+    def save_to_pickle(self, file_name):
+        if not self.on:
+            return
+        import pickle
+        with open(file_name, 'wb') as f:
+            pickle.dump(self.snap_shots, f)
+
+
+class EvolutionMusicRecording:
+
+    def __init__(self, pickled_snapshots_file):
+        import pickle
+        with open(pickled_snapshots_file, "rb") as f:
+            self.snapshots = pickle.load(f)
+
+        self.b = self.snapshots[0][0]
+        self.t = self.snapshots[0][1]
+        self.snapshot_index = 0
+
+    def current_snapshot(self):
+        return self.snapshots[self.snapshot_index]
+
+    def advance_time(self, dt):
+        self.t += dt
+        while self.time() < self.t:
+            self.snapshot_index += 1
+        self.b = self.beat()
+
+    def advance_beat(self, db):
+        self.b += db
+        while self.beat() < self.b:
+            # advance forward until we are at the given beat
+            self.snapshot_index += 1
+        self.t = self.time()
+
+    def beat(self):
+        return self.current_snapshot()[0]
+
+    def time(self):
+        return self.current_snapshot()[1]
+
+    @property
+    def playing_individuals(self):
+        return self.current_snapshot()[2]
+
+    @property
+    def disturbances(self):
+        return self.current_snapshot()[3]
+
+    def normalize(self, db, dt, remove_fast_forward=False):
+        self.snapshots = [
+            (i * db, i * dt, *snapshot[2:])
+            for i, snapshot in enumerate(self.snapshots)
+            if not remove_fast_forward or not snapshot[4]
+        ]
+        self.b = self.t = self.snapshot_index = 0
+
+    def is_fast_forwarding(self):
+        return self.current_snapshot()[4]
+
 
 
 # s.fast_forward()
-# EvolutionMusic().run()
+# EvolutionMusic("recorded_snapshots.pk").run()  # Runs and saves recorded_snapshots.pk
 # saver.save_to_json("saved_vals.json")

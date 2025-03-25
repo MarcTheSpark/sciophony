@@ -1,9 +1,10 @@
 import pygame
 from scamp_extensions.utilities import TimeVaryingParameter, ceil_to_multiple
-from evolution_marc_on_thread import *
-from save_vals import SaveVals
-
+from evolution_on_thread import *
 import math
+
+
+SAVE_FRAMES_FOLDER = "vidframes"
 
 # Initialize pygame
 pygame.init()
@@ -385,7 +386,7 @@ def draw_text_on_box_array(x_norm, y_norm, width_norm, active_array, texts, play
 
         # Determine the color based on the box's state
         if i in playing_indices:
-            color = (0, 0, 255)  # Blue for playing
+            color = (255, 221, 85)  # (0, 0, 255)  # Blue for playing
         elif active_array[i] == 1:
             color = (0, 0, 0)  # Black for active
         else:
@@ -409,12 +410,15 @@ def draw_text_on_box_array(x_norm, y_norm, width_norm, active_array, texts, play
 
 def draw_pc_voice_leading_chart(x_center_norm, y_norm, genes, playing_indices_first_bar, playing_indices_second_bar,
                                 width_norm=0.038, x_spread=0.07, opacity=1):
+    global COLOR_PLAYING_ACTIVE
+    COLOR_PLAYING_ACTIVE = (255, 221, 85)
     draw_box_array(x_center_norm - x_spread, y_norm, width_norm, genes[:12][::-1], EQUAL_VOLUME,
                    playing_indices_first_bar,  # only highlight if it's not a preimage
                    1, opacity=opacity)
     draw_box_array(x_center_norm + x_spread - width_norm, y_norm, width_norm, genes[12:24][::-1], EQUAL_VOLUME,
                    playing_indices_second_bar,  # only highlight if it's not a preimage
                    1, opacity=opacity)
+    COLOR_PLAYING_ACTIVE = (0, 0, 255)
 
     active_pitches = tuple(a or b for a, b in zip(genes[:12][::-1], genes[12:24][::-1]))
 
@@ -490,9 +494,26 @@ class HighlightImage:
             self.surface.blit(highlight_surface, (pos_x, pos_y))
 
 
-music = EvolutionMusicFake("recorded_snapshots.pk")
+music = EvolutionMusicRecording("recorded_snapshots.pk")
 
 
+def replace_value_in_tuple(t, ind, value):
+    return tuple(
+        map(lambda i: value if i == ind else t[i], range(len(t)))
+    )
+
+
+for i, snapshot in enumerate(music.snapshots):
+    if 552 <= snapshot[0] < 564:
+        music.snapshots[i] = replace_value_in_tuple(snapshot, 4, True)
+
+
+# music.snapshots = [ss for ss in music.snapshots if not ss[4]]
+
+# print(len(music.snapshots))
+# music.snapshots = [ss for ss in music.snapshots if not 6 <= ss[0] / 6 < 12]
+# print(len(music.snapshots))
+# exit()
 class GenotypeGridDrawing(np.ndarray):
     def __new__(cls, position, width, opacity, rotate=0.):
         data = np.array([*position, width, opacity, rotate], dtype=float)
@@ -644,8 +665,7 @@ pieces = {  # Note: these are drawn with anchor = "center"
         (ceil_to_multiple(FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, 12) + 1, GenotypeGridDrawing((0.5 + FINAL_DRUM_WIDTH / 4, 0.5), FINAL_DRUM_WIDTH / 2, 0, rotate=0)),
     )
 }
-GenotypeGridDrawing(position=(0.362, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-0.7853981633974483)
-GenotypeGridDrawing(position=(0.638, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-0.7853981633974483)
+
 # FOR CALCULATING THE INTERMEDIATE POSITION
 # print(pieces["snareA"].value_at(ROTATION_START + ROTATION_DUR / 2))
 # print(pieces["snareB"].value_at(ROTATION_START + ROTATION_DUR / 2))
@@ -655,14 +675,12 @@ ending_opacity = TimeVaryingParameter.from_points(
     (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR, 1), (FINAL_DRUM_ROTATE_START, 0))
 bg_opacity = TimeVaryingParameter([1, 1, 0], [ROTATION_START - ROTATION_DUR, ROTATION_DUR])
 
-saved_values = SaveVals.load_from_json("saved_vals.json")
 
 clock = pygame.time.Clock()
 
 last_playing_index = 0
 # Main loop
 running = True
-preimage = None
 
 inst_start_beats = {}
 
@@ -671,26 +689,19 @@ last_fast_forwarding_consumption = 0
 i = 0
 
 while running:
-    clock.tick(60)
     dt = 1000/60
     s.tempo_history.go_to_beat(music.beat())
-    music.advance_time(1/60)
     s.fast_forward(music.is_fast_forwarding())
 
     playing_index = int(s.beat() // 0.5) % 24
     smooth_playing_index = (0.5 + s.beat() / 0.5) % 24
     new_cycle = last_playing_index != playing_index == 0
 
+    if new_cycle:
+        print(s.beat())
+
     if s.is_fast_forwarding():
-        if s.beat() >= last_fast_forwarding_consumption + 12:
-            for gene_box, gene_box_drawing_info in beat_boxes.items():
-                current_drawing = gene_box_drawing_info()
-                if current_drawing.opacity > 0:
-                    if gene_box != "all_drums" and gene_box in music.playing_individuals:
-                        if gene_box in saved_values.values_by_situation:
-                            print(f"consuming {gene_box}")
-                            saved_values.consume(gene_box, how_many=24)
-            last_fast_forwarding_consumption = int(s.beat() / 12) * 12
+        music.advance_time(1 / 60)
         continue
 
     # Fill the background
@@ -734,6 +745,7 @@ while running:
     for gene_box, gene_box_drawing_info in beat_boxes.items():
         current_drawing = gene_box_drawing_info()
         if current_drawing.opacity > 0:
+            preimage = False
             if gene_box == "all_drums":
                 PLAYING_INACTIVE_EXPANSION_FACTOR = 4
                 active_arrays = [
@@ -745,29 +757,33 @@ while running:
             elif gene_box in music.playing_individuals:
                 active_array = music.playing_individuals[gene_box].genotype_array[:24]
 
-                if gene_box in saved_values.values_by_situation:
-                    if new_cycle and (s.beat() - inst_start_beats[gene_box] > 10):
-                        saved_values.consume(gene_box, how_many=24)
-                    mask = saved_values.read(gene_box, how_many=24)
-
-                    active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
+                if hasattr(music.playing_individuals[gene_box], 'playback_mask') and music.playing_individuals[gene_box].playback_mask is not None:
+                    active_array = tuple(int(a and b) for a, b in zip(active_array, music.playing_individuals[gene_box].playback_mask))
                 fill_array = music.playing_individuals[gene_box].genotype_array[24:48]
-                preimage = None
-            elif f"{gene_box}_preimage" in saved_values.values_by_situation:
-                preimage = saved_values.read(f"{gene_box}_preimage")[0]
-                active_array = preimage[:24]
-                if gene_box in saved_values.values_by_situation:
-                    mask = saved_values.read(gene_box, how_many=24)
-                    active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
-                fill_array = preimage[24:48]
             else:
-                continue
+                preimage = True
+                current_snapshot_index = music.snapshot_index + 1
+                try:
+                    while gene_box not in (future_playing_individuals := music.snapshots[current_snapshot_index][2]):
+                        current_snapshot_index += 1
+                except IndexError:
+                    continue
+
+                active_array = future_playing_individuals[gene_box].genotype_array[:24]
+                if hasattr(future_playing_individuals[gene_box], 'playback_mask') and future_playing_individuals[gene_box].playback_mask is not None:
+                    active_array = tuple(int(a and b) for a, b in zip(active_array, future_playing_individuals[gene_box].playback_mask))
+                fill_array = future_playing_individuals[gene_box].genotype_array[24:48]
 
             if gene_box in music.playing_individuals and playing_index != last_playing_index and active_array[playing_index] and gene_box in highlight_images:
                 highlight_images[gene_box].highlight_amount = 1
 
+            if gene_box in ("kick_bass", "snare_piano", "hihat_sax"):
+                COLOR_PLAYING_ACTIVE = (255, 221, 85)
+            else:
+                COLOR_PLAYING_ACTIVE = (0, 0, 255)
+
             draw_box_array(*current_drawing.position, current_drawing.width, active_array, fill_array,
-                           [] if preimage is not None else [playing_index],  # only highlight if it's not a preimage
+                           [] if preimage else [playing_index],  # only highlight if it's not a preimage
                            24, opacity=current_drawing.opacity)
 
             if np.any(music.disturbances):
@@ -781,9 +797,7 @@ while running:
 
     if "snare_harmony" in music.playing_individuals:
         genes = music.playing_individuals["snare_harmony"].genotype_array
-        if new_cycle:
-            saved_values.consume("harmony_voices")
-        voices, change_points = saved_values.read("harmony_voices")[0]
+        voices, change_points = music.playing_individuals["snare_harmony"].harmony_playback_record
 
         playing_indices_first_bar = set()
         playing_indices_second_bar = set()
@@ -801,9 +815,7 @@ while running:
 
     if "kick_end" in music.playing_individuals:
         genes = music.playing_individuals["kick_end"].genotype_array
-        if new_cycle:
-            saved_values.consume("bass_pitches_end")
-        bass_pitches = saved_values.read("bass_pitches_end")[0]
+        bass_pitches = music.playing_individuals["kick_end"].coin_flipped_end_bass_pcs
 
         first_half_bass_pitches = {11 - bass_pitches[0]} if bass_pitches[0] is not None and bass_pitches[0] <= playing_index < 12 else set()
         second_half_bass_pitches = {11 - bass_pitches[1]} if bass_pitches[1] is not None and 12 + bass_pitches[1] <= playing_index else set()
@@ -818,9 +830,8 @@ while running:
 
     if "hihat_marimba" in music.playing_individuals:
         genes = music.playing_individuals["hihat_marimba"].genotype_array
-        if new_cycle:
-            saved_values.consume("end_arpeggio_pitches")
-        arpeggio_pitches = saved_values.read("end_arpeggio_pitches")[0]
+
+        arpeggio_pitches = music.playing_individuals["hihat_marimba"].coin_flipped_arpeggio_pitches
 
         first_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index < 12 and arpeggio_pitches[playing_index] is not None else set()
         second_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index >= 12 and arpeggio_pitches[playing_index] is not None else set()
@@ -845,11 +856,17 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    # pygame.image.save(screen, f"vidframes/frame_{i:04d}.png")
+    if SAVE_FRAMES_FOLDER and i > 10000:
+        pygame.image.save(screen, f"{SAVE_FRAMES_FOLDER}/frame_{i:04d}.png")
+
     i += 1
 
     # Update the display
     pygame.display.flip()
+
+    music.advance_time(1/60)
+    clock.tick(60)
+
 
 # Quit pygame
 pygame.quit()

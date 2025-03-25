@@ -1,3 +1,10 @@
+"""
+This version of evolution is the main script, before I tried to sync it to the animation. Once you give it a random
+seed, it's deterministic. Note that it was important to have the amortize=False flag set on evolve_continuously, because
+otherwise with the asynchronous continuous evolution thread, differences can creep in even with the same random seed.
+amortize=True makes it less likely to fall behind on the heavy calculations of a new generation, but adds uncertainty.
+"""
+
 import cmath
 import itertools
 import math
@@ -13,8 +20,11 @@ from modspread import get_mod_n_spread_array
 
 
 STREAM_MIDI_TO_LOGIC = False
-random.seed(8)  # Probably the best!
+# seed option 1
+# random.seed(8)  # Probably the best!
+# seed option 2
 random.seed(10)
+random.seed(15)
 
 # ------------------------------------- GLOBAL VARIABLES --------------------------------------------
 
@@ -426,7 +436,6 @@ class KickLoop(DrumLoop):
     inst = bass
     play_prob_param = TimeVaryingParameter(1, clock=s, units="time")
 
-
     # --------------------- First part: bass line following the circle of fourths (self.root_pitches) ----------------
 
     def play_bassline(self):
@@ -660,29 +669,6 @@ hihat_pop.evolve_continuously(23, sex_prob=0.4, clock=s)
 kick_pop.evolve_continuously(22, sex_prob=0.4, clock=s)
 
 
-
-# # PLOTS THE HARMONY OVER TIME
-# harms = []
-# hihat_fits = []
-# s.fast_forward()
-# for _ in range(50):
-#     snare_loop = snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
-#     harms.append(snare_pop.mean_of_func(lambda sl: (SnareLoop.measure_consonance(sl.get_chords()[0]) +
-#                                                     SnareLoop.measure_consonance(sl.get_chords()[1])) / 2))
-#     hihat_fits.append(hihat_pop.mean_fitness())
-#     print(snare_loop.timing_probabilities())
-#     wait(DrumLoop.bar_duration)
-#
-# from matplotlib import pyplot as plt
-# plt.plot(harms, label="consonance")
-# plt.plot(hihat_fits, label="hihat fits")
-# plt.legend()
-# plt.show()
-# for _ in range(5):
-#     print(snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0).get_chords())
-# s.fast_forward(False)
-
-
 # Fade out the melodic parts
 SnareLoop.play_prob_param = TimeVaryingParameter([1, 0], [20], clock=s, units="time")
 KickLoop.play_prob_param = TimeVaryingParameter([1, 0], [10], clock=s, units="time")
@@ -716,4 +702,4 @@ while s.time() < 360:
 
 perf = s.stop_transcribing()
 # perf.export_to_midi_file("MarcEvolution.mid")
-perf.to_score(time_signature="12/8").export_music_xml("MarcEvolutionXML2.musicxml")
+# perf.to_score(time_signature="12/8").export_music_xml("MarcEvolutionXML2.musicxml")

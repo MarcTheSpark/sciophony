@@ -1,0 +1,4 @@
+- empty environment at the beginning, fade in instruments one at a time
+- At the end, rotate again to a single horizontal Percussion part
+- Fade out mallets first, bass, then strings, 
+- Fade out the instruments in order first and then the drums

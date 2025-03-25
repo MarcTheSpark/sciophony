@@ -1,3 +1,7 @@
+"""
+A utility function used for creating the disturbances; evenly spaced, decaying disturbances are wrapped mod n.
+"""
+
 import numpy as np
 
 

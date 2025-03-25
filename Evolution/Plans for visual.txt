@@ -1,0 +1,17 @@
+- How to show they are from the same populations?
+- Images of instruments?
+- 1:40 -- bored?
+
+open square vs filled square not clear.
+
+
+
+- 24 * 1 make it one line, left to right, then time is horizontal
+- add clipart to the left of each line
+- cuing different generation
+- consider different box drawing approaches. Make a few versions, at least one that doesn't show volume.
+- draw the environment first. thick and thin lines? Greener for more food, pale yellow for less food. different for the snare.
+- Ending: instrument labels on top; Only show the left, then the middle, then the right. then add back the middle, then add back the left
+
+- Go back to the rhythms at the end? That way showing that the drums are still active and regular.
+- at the end, just drums, fade everything else down. Just show the drums in the middle, then drums fade out.
