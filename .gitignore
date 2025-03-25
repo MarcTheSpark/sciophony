@@ -25,3 +25,9 @@ profiling_output.txt
 *.m4v
 *.pdf
 *.svg
+*.aif
+*.aiff
+*.MID
+*.mid
+*.mscz
+*.ogg
