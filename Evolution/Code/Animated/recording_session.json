@@ -1,0 +1,161 @@
+{
+    "_type": "Session",
+    "default_audio_driver": "default",
+    "default_soundfont": "MuseScore_General",
+    "default_spelling_policy": null,
+    "instruments": [
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "STANDARD",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        128,
+                        0
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "Fingered Bass",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        33
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "Piano",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        0
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "Saxophone",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        64
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "Orchestra hit",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        55
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "strings",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        48
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 7,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "marimba",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        0,
+                        12
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        },
+        {
+            "_type": "ScampInstrument",
+            "clef_preference": "from_name",
+            "default_spelling_policy": null,
+            "name": "STANDARD",
+            "playback_implementations": [
+                {
+                    "_type": "SoundfontPlaybackImplementation",
+                    "audio_driver": "default",
+                    "bank_and_preset": [
+                        128,
+                        0
+                    ],
+                    "max_pitch_bend": 48,
+                    "num_channels": 8,
+                    "soundfont": "MuseScore_General"
+                }
+            ]
+        }
+    ],
+    "tempo": 189.99999999999997
+}

@@ -1,6 +1,6 @@
 import pygame
 from scamp_extensions.utilities import TimeVaryingParameter, ceil_to_multiple
-from evolution_on_thread import *
+from evolution_recording import EvolutionMusicRecording
 import math
 
 
@@ -556,21 +556,21 @@ FINAL_DRUM_ROTATE_DUR = 26
 # FINAL_DRUM_ROTATE_START = ceil_to_multiple(FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, 12) - FINAL_DRUM_ROTATE_DUR
 
 
-dashed_line = pygame.image.load("images/DashLine.png").convert_alpha()
+dashed_line = pygame.image.load("../../images/DashLine.png").convert_alpha()
 
 highlight_images = {
-    "kick": HighlightImage("images/kick.png", "images/kickOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick"),
-    "snare": HighlightImage("images/snare.png", "images/snareOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="snare"),
-    "hihat": HighlightImage("images/hihat.png", "images/hihatOn.png",-0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat"),
-    "kick_bass": HighlightImage("images/bass.png", "images/bassOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick_bass"),
-    "snare_piano": HighlightImage("images/piano.png", "images/pianoOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="snare_piano"),
-    "hihat_sax": HighlightImage("images/synth.png", "images/synthOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat_sax"),
+    "kick": HighlightImage("../../images/kick.png", "images/kickOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick"),
+    "snare": HighlightImage("../../images/snare.png", "images/snareOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="snare"),
+    "hihat": HighlightImage("../../images/hihat.png", "images/hihatOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat"),
+    "kick_bass": HighlightImage("../../images/bass.png", "images/bassOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick_bass"),
+    "snare_piano": HighlightImage("../../images/piano.png", "images/pianoOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="snare_piano"),
+    "hihat_sax": HighlightImage("../../images/synth.png", "images/synthOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat_sax"),
 }
 
 extra_highlight_images = {
-    "bass": HighlightImage("images/bass.png", "images/bassOn.png", 0.23, 0.065, 0.07),
-    "violin": HighlightImage("images/violin.png", "images/violinOn.png", 0.5, 0.065, 0.07),
-    "mallet": HighlightImage("images/mallet.png", "images/malletOn.png", 0.77, 0.065, 0.07),
+    "bass": HighlightImage("../../images/bass.png", "images/bassOn.png", 0.23, 0.065, 0.07),
+    "violin": HighlightImage("../../images/violin.png", "images/violinOn.png", 0.5, 0.065, 0.07),
+    "mallet": HighlightImage("../../images/mallet.png", "images/malletOn.png", 0.77, 0.065, 0.07),
 }
 
 beat_boxes = {
