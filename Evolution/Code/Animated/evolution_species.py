@@ -1,8 +1,12 @@
+"""
+Definition of all of the evolution species (imports evolution_ensemble.py, and imported by evolution_on_thread.py,
+evolution_recording_player.py and evolution_animation.py).
+"""
+
 from marciano.evolution import TraitInfo, Individual, Population
 import cmath
 import itertools
 import math
-from save_vals import SaveVals
 from evolution_ensemble import *
 from scamp_extensions.rhythm import indispensability_array_from_expression
 from scamp_extensions.utilities import TimeVaryingParameter, rotate_sequence, remap, wrap_to_range, atan_warp
@@ -11,8 +15,6 @@ import numpy as np
 from scamp import *
 import random
 
-
-saver = SaveVals()
 
 # ------------------------------------- GLOBAL VARIABLES --------------------------------------------
 
@@ -161,7 +163,6 @@ class SnareLoop(DrumLoop):
         if self.playback_mask is not None:
             volumes_np = np.array(self.volumes())
             long_note_thresh = np.percentile(volumes_np, 75)
-            short_note_thresh = np.percentile(volumes_np, 50)
             for root_pitch, chord_config, volume, on_off, coin_flip in zip(self.root_pitches,
                                                                            itertools.cycle(self.chord_configurations),
                                                                            self.volumes(),
@@ -188,11 +189,12 @@ class SnareLoop(DrumLoop):
         volumes_np = np.array(self.volumes())
         long_note_thresh = np.percentile(volumes_np, 75)
         short_note_thresh = np.percentile(volumes_np, 50)
+        playback_mask = []
         for root_pitch, chord_config, volume, on_off in zip(self.root_pitches,
                                                             itertools.cycle(self.chord_configurations), self.volumes(),
                                                             self.beats()):
-            if on_off and saver.save(int(volume >= short_note_thresh and random.random() < SnareLoop.play_prob_param()),
-                                     "snare_piano"):
+            if on_off and volume >= short_note_thresh and random.random() < SnareLoop.play_prob_param():
+                playback_mask.append(1)
                 if SnareLoop.held_chord is not None:
                     SnareLoop.held_chord.end()
                     SnareLoop.held_chord = None
@@ -206,10 +208,9 @@ class SnareLoop(DrumLoop):
                                          remap(volume, 0.5, 1.0, 0, 1),
                                          self.pulse_length, "staccato")
             else:
-                if not on_off:
-                    saver.save(0, "snare_piano")
+                playback_mask.append(0)
                 wait(self.pulse_length)
-        self.playback_mask = saver.values_by_situation["snare_piano"][-len(self.root_pitches):]
+        self.playback_mask = playback_mask
 
     # -------------------------------- The ending: beat switches reinterpreted as pitch classes -----------------------
 
@@ -234,7 +235,6 @@ class SnareLoop(DrumLoop):
                 voices.append(pitch_pairs)
                 note_change_points.append(change_points)
                 fork(self._play_harmony_voice, args=(pitch_pairs, change_points))
-        saver.save([voices, note_change_points], "harmony_voices")
         wait_for_children_to_finish()
         self.harmony_playback_record = voices, note_change_points
 
@@ -397,21 +397,22 @@ class HiHatLoop(DrumLoop):
     def _play_melody_first_time_random(self):
         pitch = self.root_pitches[0] + 15
         interval_pattern = itertools.cycle([-2, -1, -3, 4])
+        playback_mask = []
         for root_pitch, volume, on_off in zip(self.root_pitches, self.volumes(), self.beats()):
             pitch = wrap_to_range(pitch, self.min_pitch, self.max_pitch)
-            if on_off and saver.save(int(random.random() < HiHatLoop.play_prob_param()), "hihat_sax"):
+            if on_off and random.random() < HiHatLoop.play_prob_param():
+                playback_mask.append(1)
                 for _ in range(2):
                     self.inst.play_note(pitch,
                                         remap(volume, 0.2, 1.0, 0, 1),
                                         self.pulse_length / 2)
                     pitch += next(interval_pattern)
             else:
-                if not on_off:
-                    saver.save(0, "hihat_sax")
+                playback_mask.append(0)
                 for _ in range(2):
                     next(interval_pattern)
                 wait(self.pulse_length)
-        self.playback_mask = saver.values_by_situation["hihat_sax"][-len(self.beats()):]
+        self.playback_mask = playback_mask
 
     # ------------------------- Ending marimba Arpeggios ---------------------------
 
@@ -462,7 +463,6 @@ class HiHatLoop(DrumLoop):
             else:
                 wait(self.pulse_length)
                 pitches_played.append(None)
-        saver.save(pitches_played, "end_arpeggio_pitches")
         self.coin_flipped_arpeggio_pitches = pitches_played
 
     def __reduce__(self):
@@ -560,7 +560,6 @@ class KickLoop(DrumLoop):
             wait(12 * self.pulse_length)
             bass_line_pcs_played.append(None)
 
-        saver.save(bass_line_pcs_played, "bass_pitches_end")
         self.coin_flipped_end_bass_pcs = bass_line_pcs_played
 
     def __reduce__(self):

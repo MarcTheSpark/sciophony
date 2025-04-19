@@ -1,25 +1,14 @@
 """
-Okay, so here's where it got really messy. The first step of putting the music on a separate thread was done to
-facilitate having an animation run alongside. But the issue was that the animation sometimes needed to peek into the
-future in order to show the grid that was about to be played by a part as it was fading in, and this was an issue
-because sometimes parts were governed by random probabilities of playing or not playing a note. Calculating those
-probabilities early would mess up the evolution process (by changing the random state), but we need to know them early
-in order to visualize.
+To do the animation, I started here, by putting the music on a separate thread so that the animation can run alongside.
+But the issue was that the animation sometimes needed to peek into the future in order to show the grid that was about
+to be played by a part as it was fading in, and this was an issue because sometimes parts were governed by random
+probabilities of playing or not playing a note. Calculating those probabilities early would mess up the evolution
+process (by changing the random state), but we need to know them early in order to visualize.
 
-This led me to create the SaveVals class, which I used to save the random values from a play-though so that they could
-be known in advance when played again with visualization.
-
-This worked...until we started wanting to mess with the visualization in Reaper --- removing measures here and there
-for pacing. This led to difficulties, since it's hard to skip a measure in an evolutionary process. So that's why I
-created the Recorder and EvolutionMusicRecording classes to just record exactly what individuals (i.e. the specific
-genomes) were active at a given time. This made it easy to just skip a few measures.
-
-So when you give EvolutionMusic a snapshots_recording_file, it saves and pickles a recording of a bunch of snapshots
-of which individuals and disturbances are active at agny given time, and this can be read and played by
-evolution_play_recorded.
-
-The whole thing was a mess. I think, if I had this to do again, I would precalculate the entire evolutionary process
-ahead of time, instead of having it run live.
+So... I wrote a Recorder class that spits out all of the playing individuals every (small) beat/time step, and spits
+it out to a pickle file called recorded_snapshots.pk. I also modified all of the evolution species
+(in evolution_species.py) to freeze their state after the first playback, so that they are consistent when pickled and
+unpickled. This can then be played from evolution_recording_player.py
 """
 
 
@@ -27,6 +16,8 @@ import threading
 from marciano.utility_funcs import target_fit_score
 from modspread import get_mod_n_spread_array
 from evolution_species import *
+import evolution_species
+
 
 random.seed(10)
 
@@ -87,7 +78,6 @@ class EvolutionMusic(threading.Thread):
         self.snapshots_recording_file = snapshots_recording_file
 
     def run(self):
-        global end_play_prob
         threading.current_thread().__clock__ = s
         recorder = Recorder(self)
         if self.snapshots_recording_file is None:
@@ -114,7 +104,6 @@ class EvolutionMusic(threading.Thread):
         fork(self.playing_individuals["snare"].play_bar)
         wait(DrumLoop.bar_duration)
 
-
         # RESET TO TIME 0 AND RANDOMNESS
         random.setstate(rand_state)
 
@@ -139,19 +128,13 @@ class EvolutionMusic(threading.Thread):
             # Gradually introduce melodic aspects
             if s.time() * SPEED_FACTOR >= 18:
                 self.playing_individuals["kick_bass"] = self.kick_pop.get_individual(0.25, 0.75)
-                if "kick_bass_preimage" not in saver.values_by_situation:
-                    saver.save(self.playing_individuals["kick_bass"].genotype_array, "kick_bass_preimage" )
 
                 fork(self.playing_individuals["kick_bass"].play_bassline)
             if s.time() * SPEED_FACTOR >= 38:
                 self.playing_individuals["snare_piano"] = self.snare_pop.get_individual(0.25, 0.75)
-                if "snare_piano_preimage" not in saver.values_by_situation:
-                    saver.save(self.playing_individuals["snare_piano"].genotype_array, "snare_piano_preimage")
                 fork(self.playing_individuals["snare_piano"].play_comp_chords)
             if s.time() * SPEED_FACTOR >= 60:
                 self.playing_individuals["hihat_sax"] = self.hihat_pop.get_individual(0.25, 0.75)
-                if "hihat_sax_preimage" not in saver.values_by_situation:
-                    saver.save(self.playing_individuals["hihat_sax"].genotype_array, "hihat_sax_preimage")
                 fork(self.playing_individuals["hihat_sax"].play_melody)
 
             fork(recorder.take_snapshots, [DrumLoop.bar_duration])
@@ -301,7 +284,7 @@ class EvolutionMusic(threading.Thread):
         # Maybe the volumes control the timing completely
 
         while s.time() * SPEED_FACTOR < 360:
-            end_play_prob = end_play_prob_curve()
+            evolution_species.end_play_prob = end_play_prob_curve()
             # kick_loop = self.kick_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
             # snare_loop = self.snare_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
             # hihat_loop = self.hihat_pop.get_individual(min_percentile=0.7, max_percentile=1.0)
@@ -369,18 +352,21 @@ class Recorder:
             if i % 10 == 0:
                 print(f"{len(self.snap_shots)} frames saved; {s.beat()=}, {s.time()=}")
             self.take_snapshot()
-            wait(1/self.frame_rate * s.tempo / 60)
+            wait(0.05)  # works a little better because it lines up
+            # wait(1/self.frame_rate * s.tempo / 60)
             i += 1
 
     def save_to_pickle(self, file_name):
         if not self.on:
             return
         import pickle
+        print("SAVING TO PICKLE")
         with open(file_name, 'wb') as f:
             pickle.dump(self.snap_shots, f)
 
 
-
-# s.fast_forward()
-EvolutionMusic("recorded_snapshots.pk").run()  # Runs and saves recorded_snapshots.pk
-# saver.save_to_json("saved_vals.json")
+if __name__ == '__main__':
+    # Runs and saves recorded_snapshots.pk.
+    # NB: YOU CANNOT FAST FORWARD; fast forwarding is actually being used here to skip sections that we don't want
+    # to retain in the recording. Later, when we load the recording, we will strip the parts that are fast-forwarded
+    EvolutionMusic("recorded_snapshots.pk").run()

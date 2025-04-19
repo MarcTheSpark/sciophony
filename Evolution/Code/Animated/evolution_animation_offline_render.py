@@ -1,14 +1,27 @@
 """
-The animation producing script. Imports evolution_on_thread, reads the saved playback masks in saved_vals.json, and
-produces a visualization.
+Offline rendering version of the animation script; which saves frames to the given folder. Assembled these frames
+with ffmpeg.
 """
 
-import numpy as np
 import pygame
-from scamp_extensions.utilities import TimeVaryingParameter, ceil_to_multiple
-from evolution_on_thread import s, EvolutionMusic, beat_strengths, snare_beat_strengths
-from save_vals import SaveVals
+from scamp_extensions.utilities import ceil_to_multiple
+from evolution_recording_player import s, EvolutionMusicRecordingPlayer
+from evolution_species import *
 import math
+import pathlib
+
+SAVE_FRAMES_FOLDER = "vidframes"
+FPS = 60
+
+current_dir = pathlib.Path(__file__).parent
+snapshots_file = current_dir.joinpath("recorded_snapshots.pk")
+music = EvolutionMusicRecordingPlayer(snapshots_file, daemon=True).normalize(remove_fast_forward=True)
+mean_db, mean_dt = music.mean_delta_beat(), music.mean_delta_time()
+music.delete_beat_range(516, 528, False)
+music.delete_beat_range(744, 792, False)
+music.delete_beat_range(924, 972, False)
+# These actually need to be done with normalize = true. Make it a delete beat ranges function?
+music.normalize(db=mean_db, dt=mean_dt)
 
 # Initialize pygame
 pygame.init()
@@ -23,6 +36,7 @@ pygame.display.set_caption("Evolution animation")
 COLOR_INACTIVE = (230, 230, 230)  # Light Grey
 COLOR_ACTIVE = (0, 0, 0)  # Black
 COLOR_PLAYING_INACTIVE = (100, 100, 100)  # Dark grey
+COLOR_PLAYING_ACTIVE_INST = (255, 221, 85)  # Yellow
 COLOR_PLAYING_ACTIVE = (0, 0, 255)  # Blue
 
 HIGHLIGHT_IMAGE_FADE_HALFLIFE = 0.3
@@ -44,7 +58,7 @@ MAX_DISTURBANCE_WIDTH = 10  # Maximum X thickness
 EQUAL_VOLUME = np.full(24, 0.7)
 
 
-def draw_part_filled_box(surface, x, y, size, strength, state, opacity=1):
+def draw_part_filled_box(surface, x, y, size, strength, state, opacity=1, is_inst=False):
     """
     Draws a box partially filled from the bottom up according to the filled_portion and the state.
 
@@ -55,11 +69,12 @@ def draw_part_filled_box(surface, x, y, size, strength, state, opacity=1):
     - strength: Fraction (0 to 1) indicating how much of the box should be filled
     - state: Can be "inactive", "active", or "playing" to determine the fill and outline color
     - opacity: Float (0 to 1) indicating the opacity level of the box
+    - is_inst: an instrument, not a drum, and therefore highlights yellow
     """
     opacity = int(opacity * 255)
     # Set the color based on the state
     if state == "playing active":
-        outline_color = fill_color = COLOR_PLAYING_ACTIVE
+        outline_color = fill_color = COLOR_PLAYING_ACTIVE if is_inst else COLOR_PLAYING_ACTIVE
     elif state == "playing inactive":
         outline_color = COLOR_PLAYING_INACTIVE
         fill_color = COLOR_INACTIVE
@@ -86,9 +101,9 @@ def draw_part_filled_box(surface, x, y, size, strength, state, opacity=1):
     pygame.draw.rect(surface, outline_color, (x, y, size, size), int(outline_thickness))
 
 
-def draw_always_filled_box(surface, x, y, size, strength, state, opacity=1):
+def draw_always_filled_box(surface, x, y, size, strength, state, opacity=1, is_inst=False):
     """
-    Draws a box partially filled from the bottom up according to the filled_portion and the state.
+    Draws a box fully filled.
 
     Parameters:
     - surface: The surface to draw the box onto
@@ -97,11 +112,12 @@ def draw_always_filled_box(surface, x, y, size, strength, state, opacity=1):
     - strength: Fraction (0 to 1) indicating how much of the box should be filled
     - state: Can be "inactive", "active", or "playing" to determine the fill and outline color
     - opacity: Float (0 to 1) indicating the opacity level of the box
+    - is_inst: an instrument, not a drum, and therefore highlights yellow
     """
     opacity = int(opacity * 255)
     # Set the color based on the state
     if state == "playing active":
-        outline_color = fill_color = COLOR_PLAYING_ACTIVE
+        outline_color = fill_color = COLOR_PLAYING_ACTIVE if is_inst else COLOR_PLAYING_ACTIVE
     elif state == "playing inactive":
         outline_color = COLOR_PLAYING_INACTIVE
         fill_color = COLOR_INACTIVE
@@ -128,9 +144,9 @@ def draw_always_filled_box(surface, x, y, size, strength, state, opacity=1):
     # pygame.draw.rect(surface, outline_color, (x, y, size, size), int(outline_thickness))
 
 
-def draw_circle_box(surface, x, y, size, strength, state, opacity=1):
+def draw_circle_box(surface, x, y, size, strength, state, opacity=1, is_inst=False):
     """
-    Draws a box partially filled from the bottom up according to the filled_portion and the state.
+    Draws a circle instead of a box with strength indicated by radius.
 
     Parameters:
     - surface: The surface to draw the box onto
@@ -139,11 +155,12 @@ def draw_circle_box(surface, x, y, size, strength, state, opacity=1):
     - strength: Fraction (0 to 1) indicating how much of the box should be filled
     - state: Can be "inactive", "active", or "playing" to determine the fill and outline color
     - opacity: Float (0 to 1) indicating the opacity level of the box
+    - is_inst: an instrument, not a drum, and therefore highlights yellow
     """
     opacity = int(opacity * 255)
     # Set the color based on the state
     if state == "playing active":
-        outline_color = fill_color = COLOR_PLAYING_ACTIVE
+        outline_color = fill_color = COLOR_PLAYING_ACTIVE_INST if is_inst else COLOR_PLAYING_ACTIVE
     elif state == "playing inactive":
         outline_color = COLOR_PLAYING_INACTIVE
         fill_color = COLOR_INACTIVE
@@ -178,7 +195,7 @@ draw_box = draw_circle_box
 
 
 def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing_indices, max_per_row, opacity=1,
-                   rotate=0, anchor="corner"):
+                   rotate=0, anchor="corner", is_inst=False):
     """
     Draws an array of square boxes and rotates the entire array while keeping the top-left corner anchored.
 
@@ -192,6 +209,7 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
     - opacity: Float (0 to 1) indicating the opacity level of the box
     - rotate: Float value for the rotation in radians (applied to the whole array)
     - anchor: where x_norm and y_norm specify
+    - is_inst: an instrument, not a drum, and therefore highlights yellow
     """
     # Determine the number of boxes
     num_boxes = len(active_array)
@@ -232,7 +250,7 @@ def draw_box_array(x_norm, y_norm, width_norm, active_array, fill_array, playing
                 state = "inactive"
 
         # Draw the box with appropriate filled portion onto the surface
-        draw_box(box_surface, x_pos, y_pos, box_size, fill_array[i], state, opacity)
+        draw_box(box_surface, x_pos, y_pos, box_size, fill_array[i], state, opacity, is_inst)
 
     # If rotation is not zero, rotate the surface while keeping the top-left corner anchored
     if rotate != 0:
@@ -343,7 +361,7 @@ def draw_line_round_corners_polygon(surf, p1, p2, c, w):
 
 
 def draw_text_on_box_array(x_norm, y_norm, width_norm, active_array, texts, playing_indices, max_per_row, font_size=20,
-                           opacity=1.0):
+                           opacity=1.0, is_inst=False):
     """
     Draws centered text on each box in the array with adjustable opacity. The color of the text depends on whether the box is active, playing, or inactive.
 
@@ -390,7 +408,7 @@ def draw_text_on_box_array(x_norm, y_norm, width_norm, active_array, texts, play
 
         # Determine the color based on the box's state
         if i in playing_indices:
-            color = (0, 0, 255)  # Blue for playing
+            color = COLOR_PLAYING_ACTIVE_INST if is_inst else COLOR_PLAYING_ACTIVE
         elif active_array[i] == 1:
             color = (0, 0, 0)  # Black for active
         else:
@@ -413,20 +431,20 @@ def draw_text_on_box_array(x_norm, y_norm, width_norm, active_array, texts, play
 
 
 def draw_pc_voice_leading_chart(x_center_norm, y_norm, genes, playing_indices_first_bar, playing_indices_second_bar,
-                                width_norm=0.038, x_spread=0.07, opacity=1):
+                                width_norm=0.038, x_spread=0.07, opacity=1, is_inst=True):
     draw_box_array(x_center_norm - x_spread, y_norm, width_norm, genes[:12][::-1], EQUAL_VOLUME,
                    playing_indices_first_bar,  # only highlight if it's not a preimage
-                   1, opacity=opacity)
+                   1, opacity=opacity, is_inst=is_inst)
     draw_box_array(x_center_norm + x_spread - width_norm, y_norm, width_norm, genes[12:24][::-1], EQUAL_VOLUME,
                    playing_indices_second_bar,  # only highlight if it's not a preimage
-                   1, opacity=opacity)
+                   1, opacity=opacity, is_inst=is_inst)
 
     active_pitches = tuple(a or b for a, b in zip(genes[:12][::-1], genes[12:24][::-1]))
 
     draw_text_on_box_array(x_center_norm - 0.019, y_norm, 0.038, active_pitches,
                            ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"][::-1],
                            playing_indices_first_bar | playing_indices_second_bar, 1,
-                           font_size=50, opacity=opacity)
+                           font_size=50, opacity=opacity, is_inst=is_inst)
 
 
 class HighlightImage:
@@ -495,10 +513,6 @@ class HighlightImage:
             self.surface.blit(highlight_surface, (pos_x, pos_y))
 
 
-music = EvolutionMusic(daemon=True)
-music.start()
-
-
 class GenotypeGridDrawing(np.ndarray):
     def __new__(cls, position, width, opacity, rotate=0.):
         data = np.array([*position, width, opacity, rotate], dtype=float)
@@ -529,82 +543,97 @@ class GenotypeGridDrawing(np.ndarray):
         return self.__repr__()
 
 
-ROTATION_START = 610
+ROTATION_START = 550
 ROTATION_DUR = 20
 BEAT_FADE_DUR = 7
-PC_CHART_FADE_START = ROTATION_START + ROTATION_DUR  # Note: Changing this messing things up!
-PC_CHART_FADE_DUR = 5
-FINAL_DRUM_ROTATE_START = 933.2
+PC_CHART_STRINGS_FADE_IN_START = ROTATION_START + ROTATION_DUR  # Note: Changing this messing things up!
+PC_CHART_MALLETS_FADE_IN_START = PC_CHART_STRINGS_FADE_IN_START + 18
+PC_CHART_BASS_FADE_IN_START = PC_CHART_MALLETS_FADE_IN_START + 25
+PC_CHART_FADE_IN_DUR = 8
+
+PC_CHART_MALLETS_FADE_OUT_START = 768
+PC_CHART_MALLETS_FADE_OUT_DUR = 24
+PC_CHART_BASS_FADE_OUT_START = 792
+PC_CHART_BASS_FADE_OUT_DUR = 24
+PC_CHART_STRINGS_FADE_OUT_START = 816
+PC_CHART_STRINGS_FADE_OUT_DUR = 6
+
+FINAL_DRUM_ROTATE_START = 820
 FINAL_DRUM_ROTATE_DUR = 26
+
+FINAL_DRUM_FADE_OUT_START = 894
+FINAL_DRUM_FADE_OUT_DUR = 30
+
+END_BEAT = 936
 
 # Ensure that the rotation finishes on the start of a cycle
 # FINAL_DRUM_ROTATE_START = ceil_to_multiple(FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, 12) - FINAL_DRUM_ROTATE_DUR
 
 
-dashed_line = pygame.image.load("../../images/DashLine.png").convert_alpha()
+dashed_line = pygame.image.load("images/DashLine.png").convert_alpha()
 
 highlight_images = {
-    "kick": HighlightImage("../../images/kick.png", "images/kickOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick"),
-    "snare": HighlightImage("../../images/snare.png", "images/snareOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="snare"),
-    "hihat": HighlightImage("../../images/hihat.png", "images/hihatOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat"),
-    "kick_bass": HighlightImage("../../images/bass.png", "images/bassOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick_bass"),
-    "snare_piano": HighlightImage("../../images/piano.png", "images/pianoOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="snare_piano"),
-    "hihat_sax": HighlightImage("../../images/synth.png", "images/synthOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat_sax"),
+    "kick": HighlightImage("images/kick.png", "images/kickOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick"),
+    "snare": HighlightImage("images/snare.png", "images/snareOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="snare"),
+    "hihat": HighlightImage("images/hihat.png", "images/hihatOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat"),
+    "kick_bass": HighlightImage("images/bass.png", "images/bassOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="kick_bass"),
+    "snare_piano": HighlightImage("images/piano.png", "images/pianoOn.png", -0.05, SQR_HEIGHT / 2, 0.07, anchor="snare_piano"),
+    "hihat_sax": HighlightImage("images/synth.png", "images/synthOn.png", -0.05, SQR_HEIGHT / 2, 0.04, anchor="hihat_sax"),
 }
 
 extra_highlight_images = {
-    "bass": HighlightImage("../../images/bass.png", "images/bassOn.png", 0.23, 0.065, 0.07),
-    "violin": HighlightImage("../../images/violin.png", "images/violinOn.png", 0.5, 0.065, 0.07),
-    "mallet": HighlightImage("../../images/mallet.png", "images/malletOn.png", 0.77, 0.065, 0.07),
+    "bass": HighlightImage("images/bass.png", "images/bassOn.png", 0.23, 0.065, 0.07),
+    "violin": HighlightImage("images/violin.png", "images/violinOn.png", 0.5, 0.065, 0.07),
+    "mallet": HighlightImage("images/mallet.png", "images/malletOn.png", 0.77, 0.065, 0.07),
 }
 
 beat_boxes = {
     "kick": TimeVaryingParameter.from_points(
-        (-24, GenotypeGridDrawing((ROW_START, 4/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (-20, GenotypeGridDrawing((ROW_START, 4 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
-        (40, GenotypeGridDrawing((ROW_START, 4/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
-        (50, GenotypeGridDrawing((ROW_START, 3/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
-        (60, GenotypeGridDrawing((ROW_START, 2/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (4, GenotypeGridDrawing((ROW_START, 4/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (12, GenotypeGridDrawing((ROW_START, 4 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (64, GenotypeGridDrawing((ROW_START, 4/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
+        (74, GenotypeGridDrawing((ROW_START, 3/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
+        (84, GenotypeGridDrawing((ROW_START, 2/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 2/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 2/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
     "snare": TimeVaryingParameter.from_points(
-        (-12, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (-8, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
-        (22, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
-        (112, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
-        (122, GenotypeGridDrawing((ROW_START, 11/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
-        (132, GenotypeGridDrawing((ROW_START, 10/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (16, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (24, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (46, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (136, GenotypeGridDrawing((ROW_START, 12/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
+        (146, GenotypeGridDrawing((ROW_START, 11/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
+        (156, GenotypeGridDrawing((ROW_START, 10/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 10/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 10/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
     "hihat": TimeVaryingParameter.from_points(
-        (-5, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (0, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
-        (172, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
-        (182, GenotypeGridDrawing((ROW_START, 19/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
-        (192, GenotypeGridDrawing((ROW_START, 18/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (28, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (36, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (196, GenotypeGridDrawing((ROW_START, 20/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), 2),
+        (206, GenotypeGridDrawing((ROW_START, 19/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1), -2),
+        (216, GenotypeGridDrawing((ROW_START, 18/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 18/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 18/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
     "kick_bass": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (56, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (60, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (78, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (84, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 6/24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
     "snare_piano": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (128, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (132, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (152, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (156, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 14 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
     "hihat_sax": TimeVaryingParameter.from_points(
         (0, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (188, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
-        (192, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
+        (212, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
+        (216, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - BEAT_FADE_DUR, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 1)),
         (ROTATION_START - 1, GenotypeGridDrawing((ROW_START, 22 / 24 - SQR_HEIGHT / 2), ROW_WIDTH, 0)),
     ),
@@ -613,6 +642,10 @@ beat_boxes = {
          GenotypeGridDrawing((0.5 - FINAL_DRUM_WIDTH / 2, 0.5 - FINAL_DRUM_SQR_HEIGHT / 2), FINAL_DRUM_WIDTH, 0)),
         (ceil_to_multiple(FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, 12),
          GenotypeGridDrawing((0.5 - FINAL_DRUM_WIDTH / 2, 0.5 - FINAL_DRUM_SQR_HEIGHT / 2), FINAL_DRUM_WIDTH, 1)),
+        (FINAL_DRUM_FADE_OUT_START,
+         GenotypeGridDrawing((0.5 - FINAL_DRUM_WIDTH / 2, 0.5 - FINAL_DRUM_SQR_HEIGHT / 2), FINAL_DRUM_WIDTH, 1)),
+        (FINAL_DRUM_FADE_OUT_START + FINAL_DRUM_FADE_OUT_DUR,
+         GenotypeGridDrawing((0.5 - FINAL_DRUM_WIDTH / 2, 0.5 - FINAL_DRUM_SQR_HEIGHT / 2), FINAL_DRUM_WIDTH, 0)),
     )
 }
 
@@ -623,10 +656,10 @@ pieces = {  # Note: these are drawn with anchor = "center"
         (ROTATION_START, GenotypeGridDrawing((ROW_START + ROW_WIDTH / 4, 10 / 24), ROW_WIDTH / 2, 1), 2),
         (ROTATION_START + ROTATION_DUR/2, GenotypeGridDrawing(position=(0.387, 0.476), width=0.453, opacity=1.0, rotate=-math.pi/4), -2),
         (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
-        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
-        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_DUR + 1, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
-        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR - 1, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
-        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
+        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_IN_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
+        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_IN_DUR + 1, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
+        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_IN_DUR - 1, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
+        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_IN_DUR, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
         (FINAL_DRUM_ROTATE_START, GenotypeGridDrawing((0.5 - 0.07 + 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2), 2),
         (FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR / 2, GenotypeGridDrawing(position=(0.362, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-math.pi / 4), -2),
         (FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, GenotypeGridDrawing((0.5 - FINAL_DRUM_WIDTH / 4, 0.5), FINAL_DRUM_WIDTH / 2, 1, rotate=0)),
@@ -639,10 +672,10 @@ pieces = {  # Note: these are drawn with anchor = "center"
         (ROTATION_START, GenotypeGridDrawing((ROW_START + ROW_WIDTH * 3 / 4, 10 / 24), ROW_WIDTH / 2, 1), 2),
         (ROTATION_START + ROTATION_DUR / 2, GenotypeGridDrawing((0.663, 0.476), width=0.453, opacity=1.0, rotate=-math.pi/4), -2),
         (ROTATION_START + ROTATION_DUR, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
-        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
-        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_DUR + 1, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
-        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR - 1, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
-        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
+        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_IN_DUR, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
+        (ROTATION_START + ROTATION_DUR + PC_CHART_FADE_IN_DUR + 1, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
+        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_IN_DUR - 1, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 0, rotate=-math.pi / 2)),
+        (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_IN_DUR, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2)),
         (FINAL_DRUM_ROTATE_START, GenotypeGridDrawing((0.5 + 0.07 - 0.038 / 2, 0.13 + 0.038 * ASPECT * 6), 0.228 * 2, 1, rotate=-math.pi / 2), 2),
         (FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR / 2, GenotypeGridDrawing(position=(0.638, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-math.pi / 4), -2),
         (FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, GenotypeGridDrawing((0.5 + FINAL_DRUM_WIDTH / 4, 0.5), FINAL_DRUM_WIDTH / 2, 1, rotate=0)),
@@ -650,52 +683,38 @@ pieces = {  # Note: these are drawn with anchor = "center"
         (ceil_to_multiple(FINAL_DRUM_ROTATE_START + FINAL_DRUM_ROTATE_DUR, 12) + 1, GenotypeGridDrawing((0.5 + FINAL_DRUM_WIDTH / 4, 0.5), FINAL_DRUM_WIDTH / 2, 0, rotate=0)),
     )
 }
-GenotypeGridDrawing(position=(0.362, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-0.7853981633974483)
-GenotypeGridDrawing(position=(0.638, 0.5176666666666667), width=0.453, opacity=1.0, rotate=-0.7853981633974483)
+
 # FOR CALCULATING THE INTERMEDIATE POSITION
 # print(pieces["snareA"].value_at(ROTATION_START + ROTATION_DUR / 2))
 # print(pieces["snareB"].value_at(ROTATION_START + ROTATION_DUR / 2))
 
-ending_opacity = TimeVaryingParameter.from_points(
-    (0, 0), (PC_CHART_FADE_START, 0), (PC_CHART_FADE_START + PC_CHART_FADE_DUR, 1),
-    (FINAL_DRUM_ROTATE_START - PC_CHART_FADE_DUR, 1), (FINAL_DRUM_ROTATE_START, 0))
-bg_opacity = TimeVaryingParameter([1, 1, 0], [ROTATION_START - ROTATION_DUR, ROTATION_DUR])
+strings_pc_chart_opacity = TimeVaryingParameter.from_points(
+    (0, 0), (PC_CHART_STRINGS_FADE_IN_START, 0), (PC_CHART_STRINGS_FADE_IN_START + PC_CHART_FADE_IN_DUR, 1),
+    (PC_CHART_STRINGS_FADE_OUT_START, 1), (PC_CHART_STRINGS_FADE_OUT_START + PC_CHART_STRINGS_FADE_OUT_DUR, 0))
 
-saved_values = SaveVals.load_from_json("saved_vals.json")
+bass_pc_chart_opacity = TimeVaryingParameter.from_points(
+    (0, 0), (PC_CHART_BASS_FADE_IN_START, 0), (PC_CHART_BASS_FADE_IN_START + PC_CHART_FADE_IN_DUR, 1),
+    (PC_CHART_BASS_FADE_OUT_START, 1), (PC_CHART_BASS_FADE_OUT_START + PC_CHART_BASS_FADE_OUT_DUR, 0))
+
+mallets_pc_chart_opacity = TimeVaryingParameter.from_points(
+    (0, 0), (PC_CHART_MALLETS_FADE_IN_START, 0), (PC_CHART_MALLETS_FADE_IN_START + PC_CHART_FADE_IN_DUR, 1),
+    (PC_CHART_MALLETS_FADE_OUT_START, 1), (PC_CHART_MALLETS_FADE_OUT_START + PC_CHART_MALLETS_FADE_OUT_DUR, 0))
+
+bg_opacity = TimeVaryingParameter([1, 1, 0], [ROTATION_START - ROTATION_DUR, ROTATION_DUR])
+play_line_opacity = TimeVaryingParameter([0, 0, 1, 1, 0], [0.5, 6.5, ROTATION_START - ROTATION_DUR - 7, ROTATION_DUR])
+
 
 clock = pygame.time.Clock()
 
 last_playing_index = 0
 # Main loop
 running = True
-preimage = None
-
-inst_start_beats = {}
-
-last_fast_forwarding_consumption = 0
 
 
-while running:
-    dt = clock.tick(60)
-    s.rouse_and_hold()
-    s.release_from_suspension()
-    playing_index = int(s.beat() // 0.5) % 24
-    smooth_playing_index = (0.5 + s.beat() / 0.5) % 24
-    new_cycle = last_playing_index != playing_index == 0
-
-    if s.is_fast_forwarding():
-        if s.beat() >= last_fast_forwarding_consumption + 12:
-            for gene_box, gene_box_drawing_info in beat_boxes.items():
-                current_drawing = gene_box_drawing_info()
-                if current_drawing.opacity > 0:
-                    if gene_box != "all_drums" and gene_box in music.playing_individuals:
-                        if gene_box in saved_values.values_by_situation:
-                            print(f"consuming {gene_box}")
-                            saved_values.consume(gene_box, how_many=24)
-            last_fast_forwarding_consumption = int(s.beat() / 12) * 12
-        continue
-
-    # Fill the background
+def fill_bg():
+    """
+    Blit the background before drawing each frame.
+    """
     screen.fill((255, 255, 255))  # White background
     if (bg_op := bg_opacity()) > 0:
         if bg_op < 1:
@@ -709,10 +728,19 @@ while running:
         screen.blit(faded_food_surface1, (0, 0))
         screen.blit(faded_food_surface2, (0, HEIGHT / 3))
         screen.blit(faded_food_surface1, (0, HEIGHT * 2 / 3))
+
+
+def draw_dashed_time_indicator():
+    if (bg_op := play_line_opacity()) > 0:
         dashed_line.set_alpha(int(bg_op * 255))
         line_x = WIDTH * (ROW_START + smooth_playing_index * SQR_WIDTH) - dashed_line.get_width() / 2
         screen.blit(dashed_line, (line_x, 0))
 
+
+def draw_ephemera():
+    """
+    Draws the ephemeral chunks that the beat is broken up into as it rotates to be vertical at the end.
+    """
     for piece_name, piece in pieces.items():
         current_drawing = piece()
         if current_drawing.opacity > 0:
@@ -732,13 +760,16 @@ while running:
                            [], 12, opacity=current_drawing.opacity, rotate=current_drawing.rotate,
                            anchor="center")
 
-    for inst in music.playing_individuals:
-        if inst not in inst_start_beats:
-            inst_start_beats[inst] = s.beat()
 
+def draw_beat_boxes():
+    """
+    Draws the main beat boxes.
+    """
+    global PLAYING_INACTIVE_EXPANSION_FACTOR
     for gene_box, gene_box_drawing_info in beat_boxes.items():
         current_drawing = gene_box_drawing_info()
         if current_drawing.opacity > 0:
+            preimage = False
             if gene_box == "all_drums":
                 PLAYING_INACTIVE_EXPANSION_FACTOR = 4
                 active_arrays = [
@@ -749,31 +780,30 @@ while running:
                 fill_array = np.sum(active_arrays, axis=0) / 3
             elif gene_box in music.playing_individuals:
                 active_array = music.playing_individuals[gene_box].genotype_array[:24]
-
-                if gene_box in saved_values.values_by_situation:
-                    if new_cycle and (s.beat() - inst_start_beats[gene_box] > 10):
-                        saved_values.consume(gene_box, how_many=24)
-                    mask = saved_values.read(gene_box, how_many=24)
-
-                    active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
                 fill_array = music.playing_individuals[gene_box].genotype_array[24:48]
-                preimage = None
-            elif f"{gene_box}_preimage" in saved_values.values_by_situation:
-                preimage = saved_values.read(f"{gene_box}_preimage")[0]
-                active_array = preimage[:24]
-                if gene_box in saved_values.values_by_situation:
-                    mask = saved_values.read(gene_box, how_many=24)
+
+                if hasattr(music.playing_individuals[gene_box], 'playback_mask') and music.playing_individuals[gene_box].playback_mask is not None:
+                    mask = music.playing_individuals[gene_box].playback_mask
                     active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
-                fill_array = preimage[24:48]
+            elif gene_box in (next_playing_individuals := music.snapshot_at_beat(music.beat() + 12)[2]):
+                active_array = next_playing_individuals[gene_box].genotype_array[:24]
+                fill_array = next_playing_individuals[gene_box].genotype_array[24:48]
+
+                if hasattr(next_playing_individuals[gene_box], 'playback_mask') and next_playing_individuals[gene_box].playback_mask is not None:
+                    mask = next_playing_individuals[gene_box].playback_mask
+                    active_array = tuple(int(a and b) for a, b in zip(active_array, mask))
+
+                preimage = True
             else:
                 continue
 
             if gene_box in music.playing_individuals and playing_index != last_playing_index and active_array[playing_index] and gene_box in highlight_images:
                 highlight_images[gene_box].highlight_amount = 1
 
+            is_inst = gene_box in ("snare_piano", "kick_bass", "hihat_sax")
             draw_box_array(*current_drawing.position, current_drawing.width, active_array, fill_array,
-                           [] if preimage is not None else [playing_index],  # only highlight if it's not a preimage
-                           24, opacity=current_drawing.opacity)
+                           [] if preimage else [playing_index],  # only highlight if it's not a preimage
+                           24, opacity=current_drawing.opacity, is_inst=is_inst)
 
             if np.any(music.disturbances):
                 dist_copy = music.disturbances.copy()
@@ -781,62 +811,101 @@ while running:
                 overlay_exes_on_box(*current_drawing.position, current_drawing.width,
                                     dist_copy, [playing_index], 24)
 
+
+def draw_highlight_images(dt):
     for highlight_image in highlight_images.values():
         highlight_image.draw(dt)
 
+
+def draw_snare_harmony(dt):
+    genes = music.playing_individuals["snare_harmony"].genotype_array
+    voices, change_points = music.playing_individuals["snare_harmony"].harmony_playback_record
+
+    playing_indices_first_bar = set()
+    playing_indices_second_bar = set()
+    for pitch_pair, changes in zip(voices, change_points):
+        if changes[0] <= playing_index < changes[1] and pitch_pair[0] is not None:
+            playing_indices_first_bar.add(11 - pitch_pair[0] % 12)
+        elif playing_index >= changes[1] and pitch_pair[1] is not None:
+            playing_indices_second_bar.add(11 - pitch_pair[1] % 12)
+
+    draw_pc_voice_leading_chart(0.5, 0.13, genes, playing_indices_first_bar, playing_indices_second_bar,
+                                opacity=strings_pc_chart_opacity())
+    extra_highlight_images["violin"].opacity = strings_pc_chart_opacity()
+    if len(playing_indices_first_bar.union(playing_indices_second_bar)) > 0:
+        extra_highlight_images["violin"].highlight_amount = 1
+    extra_highlight_images["violin"].draw(dt)
+
+
+def draw_ending_bass(dt):
+    genes = music.playing_individuals["kick_end"].genotype_array
+    bass_pitches = music.playing_individuals["kick_end"].coin_flipped_end_bass_pcs
+
+    first_half_bass_pitches = {11 - bass_pitches[0]} if bass_pitches[0] is not None and bass_pitches[
+        0] <= playing_index < 12 else set()
+    second_half_bass_pitches = {11 - bass_pitches[1]} if bass_pitches[1] is not None and 12 + bass_pitches[
+        1] <= playing_index else set()
+    draw_pc_voice_leading_chart(0.23, 0.13, genes,
+                                first_half_bass_pitches,
+                                second_half_bass_pitches,
+                                opacity=bass_pc_chart_opacity())
+    extra_highlight_images["bass"].opacity = bass_pc_chart_opacity()
+    if len(first_half_bass_pitches.union(second_half_bass_pitches)) > 0:
+        extra_highlight_images["bass"].highlight_amount = 1
+    extra_highlight_images["bass"].draw(dt)
+
+
+def draw_ending_marimba(dt):
+    genes = music.playing_individuals["hihat_marimba"].genotype_array
+    arpeggio_pitches = music.playing_individuals["hihat_marimba"].coin_flipped_arpeggio_pitches
+
+    first_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index < 12 and arpeggio_pitches[
+        playing_index] is not None else set()
+    second_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index >= 12 and arpeggio_pitches[
+        playing_index] is not None else set()
+    draw_pc_voice_leading_chart(0.77, 0.13, genes,
+                                first_half_arp_pitches,
+                                second_half_arp_pitches,
+                                opacity=mallets_pc_chart_opacity())
+    extra_highlight_images["mallet"].opacity = mallets_pc_chart_opacity()
+    if len(first_half_arp_pitches.union(second_half_arp_pitches)) > 0:
+        extra_highlight_images["mallet"].highlight_amount = 1
+    extra_highlight_images["mallet"].draw(dt)
+
+
+def draw_frame(dt):
+    # Fill the background
+    fill_bg()
+    draw_ephemera()
+    draw_beat_boxes()
+    draw_highlight_images(dt)
+
     if "snare_harmony" in music.playing_individuals:
-        genes = music.playing_individuals["snare_harmony"].genotype_array
-        if new_cycle:
-            saved_values.consume("harmony_voices")
-        voices, change_points = saved_values.read("harmony_voices")[0]
-
-        playing_indices_first_bar = set()
-        playing_indices_second_bar = set()
-        for pitch_pair, changes in zip(voices, change_points):
-            if changes[0] <= playing_index < changes[1] and pitch_pair[0] is not None:
-                playing_indices_first_bar.add(11 - pitch_pair[0] % 12)
-            elif playing_index >= changes[1] and pitch_pair[1] is not None:
-                playing_indices_second_bar.add(11 - pitch_pair[1] % 12)
-
-        draw_pc_voice_leading_chart(0.5, 0.13, genes, playing_indices_first_bar, playing_indices_second_bar, opacity=ending_opacity())
-        extra_highlight_images["violin"].opacity = ending_opacity()
-        if len(playing_indices_first_bar.union(playing_indices_second_bar)) > 0:
-            extra_highlight_images["violin"].highlight_amount = 1
-        extra_highlight_images["violin"].draw(dt)
+        draw_snare_harmony(dt)
 
     if "kick_end" in music.playing_individuals:
-        genes = music.playing_individuals["kick_end"].genotype_array
-        if new_cycle:
-            saved_values.consume("bass_pitches_end")
-        bass_pitches = saved_values.read("bass_pitches_end")[0]
-
-        first_half_bass_pitches = {11 - bass_pitches[0]} if bass_pitches[0] is not None and bass_pitches[0] <= playing_index < 12 else set()
-        second_half_bass_pitches = {11 - bass_pitches[1]} if bass_pitches[1] is not None and 12 + bass_pitches[1] <= playing_index else set()
-        draw_pc_voice_leading_chart(0.23, 0.13, genes,
-                                    first_half_bass_pitches,
-                                    second_half_bass_pitches,
-                                    opacity=ending_opacity())
-        extra_highlight_images["bass"].opacity = ending_opacity()
-        if len(first_half_bass_pitches.union(second_half_bass_pitches)) > 0:
-            extra_highlight_images["bass"].highlight_amount = 1
-        extra_highlight_images["bass"].draw(dt)
+        draw_ending_bass(dt)
 
     if "hihat_marimba" in music.playing_individuals:
-        genes = music.playing_individuals["hihat_marimba"].genotype_array
-        if new_cycle:
-            saved_values.consume("end_arpeggio_pitches")
-        arpeggio_pitches = saved_values.read("end_arpeggio_pitches")[0]
+        draw_ending_marimba(dt)
 
-        first_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index < 12 and arpeggio_pitches[playing_index] is not None else set()
-        second_half_arp_pitches = {11 - arpeggio_pitches[playing_index] % 12} if playing_index >= 12 and arpeggio_pitches[playing_index] is not None else set()
-        draw_pc_voice_leading_chart(0.77, 0.13, genes,
-                                    first_half_arp_pitches,
-                                    second_half_arp_pitches,
-                                    opacity=ending_opacity())
-        extra_highlight_images["mallet"].opacity = ending_opacity()
-        if len(first_half_arp_pitches.union(second_half_arp_pitches)) > 0:
-            extra_highlight_images["mallet"].highlight_amount = 1
-        extra_highlight_images["mallet"].draw(dt)
+    draw_dashed_time_indicator()
+
+
+i = 0
+
+while running and s.beat() < END_BEAT:
+    dt = 1000 / FPS
+    s.tempo_history.go_to_beat(music.beat())
+    s.fast_forward(music.is_fast_forwarding())
+    playing_index = int(s.beat() // 0.5) % 24
+    smooth_playing_index = (0.5 + s.beat() / 0.5) % 24
+
+    try:
+        draw_frame(dt)
+    except IndexError:
+        running = False
+        break
 
     last_playing_index = playing_index
 
@@ -844,9 +913,19 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+            break
+
+    if SAVE_FRAMES_FOLDER:
+        pygame.image.save(screen, f"{SAVE_FRAMES_FOLDER}/frame_{i:05d}.png")
+
+    i += 1
 
     # Update the display
     pygame.display.flip()
+
+    music.advance_time(1 / FPS)
+    print(music.time())
+    # clock.tick(FPS)
 
 # Quit pygame
 pygame.quit()

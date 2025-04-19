@@ -1,3 +1,7 @@
+"""
+Defines the ensemble which is imported by all the other playback versions.
+"""
+
 from scamp import Session
 
 STREAM_MIDI_TO_LOGIC = False
