@@ -2,6 +2,8 @@
 This plays the recording of snapshots of which individuals are active, made by evolution_on_thread.py.
 """
 from bisect import bisect_left
+from itertools import zip_longest
+from scamp.utilities import floor_to_multiple
 from evolution_species import *
 import threading
 
@@ -15,14 +17,21 @@ class EvolutionMusicRecordingPlayer(threading.Thread):
             self.snapshots = pickle.load(f)
 
         self._recalc()
-        self.b = self.snapshots[0][0]
-        self.t = self.snapshots[0][1]
-        self.snapshot_index = 0
+        self._reset()
+
+    def reset_to_start(self):
+        self._recalc()
+        self._reset()
 
     def _recalc(self):
         """Recalculates self._beats and self._times."""
         self._beats = [ss[0] for ss in self.snapshots]
         self._times = [ss[1] for ss in self.snapshots]
+
+    def _reset(self):
+        self.b = self.snapshots[0][0]
+        self.t = self.snapshots[0][1]
+        self.snapshot_index = 0
 
     def current_snapshot(self):
         return self.snapshots[self.snapshot_index]
@@ -72,43 +81,57 @@ class EvolutionMusicRecordingPlayer(threading.Thread):
     def disturbances(self):
         return self.current_snapshot()[3]
 
-    def normalize(self, db=None, dt=None, remove_fast_forward=False):
-        if db is None:
-            db = self.mean_delta_beat()
-        if dt is None:
-            dt = self.mean_delta_time()
+    def delete_fast_forwards(self, ripple_delete=True, shift_to_zero=False):
+        return self.delete_conditional(
+            lambda ss: ss[4],
+            ripple_delete=ripple_delete, shift_to_zero=shift_to_zero
+        )
 
-        self.snapshots = [
-            (i * db, i * dt, *snapshot[2:])
-            for i, snapshot in enumerate(
-                snapshot for snapshot in self.snapshots if not remove_fast_forward or not snapshot[4]
-            )
-        ]
-        self.b = self.t = self.snapshot_index = 0
-        self._recalc()
+    def delete_beat_ranges(self, *beat_ranges, ripple_delete=True, shift_to_zero=False):
+        return self.delete_conditional(
+            lambda ss: any(start_beat <= ss[0] < end_beat for start_beat, end_beat in beat_ranges),
+            ripple_delete=ripple_delete, shift_to_zero=shift_to_zero
+        )
+
+    def delete_conditional(self, delete_condition_function, ripple_delete=True, shift_to_zero=False):
+        new_snapshots = []
+        start_beat, start_time = self.snapshots[0][:2]
+        beat_shift = -start_beat if shift_to_zero else 0
+        time_shift = -start_time if shift_to_zero else 0
+        for ss, next_ss in zip_longest(self.snapshots, self.snapshots[1:]):
+            if delete_condition_function(ss):
+                # delete_snapshot
+                if next_ss is not None and ripple_delete:
+                    beat_shift -= next_ss[0] - ss[0]
+                    time_shift -= next_ss[1] - ss[1]
+
+            else:
+                if beat_shift == time_shift == 0:
+                    new_snapshots.append(ss)
+                else:
+                    new_snapshots.append((
+                        ss[0] + beat_shift,
+                        ss[1] + time_shift,
+                        *ss[2:]
+                    ))
+        self.snapshots = new_snapshots
+        self.reset_to_start()
         return self
 
-    def mean_delta_beat(self):
-        dbs = [b[0] - a[0] for a, b in zip(self.snapshots[:-1], self.snapshots[1:])]
-        return sum(dbs) / len(dbs)
-
-    def mean_delta_time(self):
-        dts = [b[1] - a[1] for a, b in zip(self.snapshots[:-1], self.snapshots[1:])]
-        return sum(dts) / len(dts)
-
-    def delete_beat_range(self, start_beat, end_beat, normalize=False):
-        db_avg, dt_avg = self.mean_delta_beat(), self.mean_delta_time()
-        self.snapshots = [ss for ss in self.snapshots if not start_beat <= ss[0] < end_beat]
-        if normalize:
-            # need to get the average db and dt first, since otherwise the big gap will distort it
-            self.normalize(db_avg, dt_avg)
-
-    def delete_time_range(self, start_time, end_time, normalize=False):
-        db_avg, dt_avg = self.mean_delta_beat(), self.mean_delta_time()
-        self.snapshots = [ss for ss in self.snapshots if not start_time <= ss[1] < end_time]
-        if normalize:
-            # need to get the average db and dt first, since otherwise the big gap will distort it
-            self.normalize(db_avg, dt_avg)
+    def print_snapshot_report(self, end_beat=None):
+        cycle_start = floor_to_multiple(self.snapshots[0][0], 12)
+        for ss in self.snapshots:
+            if end_beat is not None and ss[0] >= end_beat:
+                break
+            if ss[0] >= cycle_start:
+                print(f"BEATS {cycle_start}-{cycle_start + 12}:")
+                cycle_start += 12
+            ss_string = f"    Snapshot at (b:{ss[0]}, t:{ss[1]}): {tuple(ss[2].keys())}"
+            if sum(ss[3]) > 0:
+                ss_string += f", disturbances={tuple(ss[3])}"
+            if ss[4]:
+                ss_string += " [FAST FORWARD]"
+            print(ss_string)
 
     def is_fast_forwarding(self):
         return self.current_snapshot()[4]

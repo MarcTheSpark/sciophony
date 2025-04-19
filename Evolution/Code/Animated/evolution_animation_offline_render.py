@@ -15,13 +15,10 @@ FPS = 60
 
 current_dir = pathlib.Path(__file__).parent
 snapshots_file = current_dir.joinpath("recorded_snapshots.pk")
-music = EvolutionMusicRecordingPlayer(snapshots_file, daemon=True).normalize(remove_fast_forward=True)
-mean_db, mean_dt = music.mean_delta_beat(), music.mean_delta_time()
-music.delete_beat_range(516, 528, False)
-music.delete_beat_range(744, 792, False)
-music.delete_beat_range(924, 972, False)
-# These actually need to be done with normalize = true. Make it a delete beat ranges function?
-music.normalize(db=mean_db, dt=mean_dt)
+music = EvolutionMusicRecordingPlayer(snapshots_file, daemon=True)
+music.delete_fast_forwards(shift_to_zero=True)
+# music.print_snapshot_report(100)
+music.delete_beat_ranges((516, 528), (744, 792), (924, 972))
 
 # Initialize pygame
 pygame.init()
@@ -556,10 +553,10 @@ PC_CHART_MALLETS_FADE_OUT_DUR = 24
 PC_CHART_BASS_FADE_OUT_START = 792
 PC_CHART_BASS_FADE_OUT_DUR = 24
 PC_CHART_STRINGS_FADE_OUT_START = 816
-PC_CHART_STRINGS_FADE_OUT_DUR = 6
+PC_CHART_STRINGS_FADE_OUT_DUR = 5
 
-FINAL_DRUM_ROTATE_START = 820
-FINAL_DRUM_ROTATE_DUR = 26
+FINAL_DRUM_ROTATE_START = 822
+FINAL_DRUM_ROTATE_DUR = 28
 
 FINAL_DRUM_FADE_OUT_START = 894
 FINAL_DRUM_FADE_OUT_DUR = 30
@@ -924,8 +921,8 @@ while running and s.beat() < END_BEAT:
     pygame.display.flip()
 
     music.advance_time(1 / FPS)
-    print(music.time())
-    # clock.tick(FPS)
+    # print(f"t={music.time()}, b={music.beat()}")
+    # clock.tick(FPS)  # no need for this; slows it down when it can go faster
 
 # Quit pygame
 pygame.quit()
