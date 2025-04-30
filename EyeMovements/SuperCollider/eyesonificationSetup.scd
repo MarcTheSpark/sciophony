@@ -8,7 +8,7 @@ Defines the ~doSetup function, which creates:
 Also sets up a global reverb and limiter
 **/
 
-~doSetup = { |canvas=true|
+~doSetup = { |canvas=true, onSetup=nil|
 
 	var streamfiles = Array.fill(30, { |i| ("eye_tracking_data/tracks_3840/portrait_191/191_left/datos_" ++ (i + 1).asString ++ ".txt").resolveRelative});
 
@@ -129,7 +129,7 @@ Also sets up a global reverb and limiter
 		s.sync;
 		EyeUtilities.setOutputLimiter(0.7, 0.7);
 		"Done!".postln;
-
+		onSetup.value;
 	});
 
 }
