@@ -116,25 +116,28 @@ void oscEvent(OscMessage msg) {
 void draw() {
   int currentMillis = millis();
   
+  float dt = 0;
   if (lastMillis != -1) {
-    currentTime += (currentMillis - lastMillis) * 0.001 * playbackRate;
+    dt = (currentMillis - lastMillis) * 0.001 * playbackRate;
   }
   
   lastMillis = currentMillis;
   currentDrawMethod.drawBG();
 
-  for (int i = 0; i < CANTIDAD_OBSERVERS_ojo_3840; i = i+1) {
-    observer_ojo_3840[i].countLine_3840(true);  /// reads the data line and prints the position for each observer
-    if(activeObservers[i]) {
-      observer_ojo_3840[i].updatePositionValues();
-      currentDrawMethod.drawEye(
-        i, 
-        int(observer_ojo_3840[i].EYE_X_left_3840),
-        int(observer_ojo_3840[i].EYE_Y_left_3840),
-        int(observer_ojo_3840[i].EYE_X_right_3840),
-        int(observer_ojo_3840[i].EYE_Y_right_3840)
-      );
+  for (int k = 0; k < SUBFRAME_FACTOR; k++) {
+    currentTime += dt / SUBFRAME_FACTOR;
+    for (int i = 0; i < CANTIDAD_OBSERVERS_ojo_3840; i = i+1) {
+      observer_ojo_3840[i].countLine_3840(true);  /// reads the data line and prints the position for each observer
+      if(activeObservers[i]) {
+        observer_ojo_3840[i].updatePositionValues();
+        currentDrawMethod.drawEye(
+          i, 
+          int(observer_ojo_3840[i].EYE_X_left_3840),
+          int(observer_ojo_3840[i].EYE_Y_left_3840),
+          int(observer_ojo_3840[i].EYE_X_right_3840),
+          int(observer_ojo_3840[i].EYE_Y_right_3840)
+        );
+      }
     }
   }
-
 }

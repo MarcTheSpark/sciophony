@@ -1,3 +1,9 @@
+/*
+NOTE: this file name starts with A (and the others start with other letters) as a way 
+of forcing processing to put the pieces together in that order. These settings need
+to be defined before some of the stuff in the other files.
+*/
+
 int RETRATO_NUM = 191;
 int CANTIDAD_OBSERVERS_ojo_3840 = 30; // the number of observers available for this portait;
 
@@ -11,6 +17,8 @@ int lastMillis = -1; // last recorded value of millis()
 
 int ALTO_PANTALLA = (int)(1000 * SCALE);
 int ANCHO_PANTALLA = (int)(565 * SCALE);
+
+int SUBFRAME_FACTOR = 4;  // frames to draw per frame (to increase trail resolution)
 
 float minDataX = 0;
 float maxDataX = 2160.0;
