@@ -1,0 +1,11 @@
+TODO:
+- Make 10 different etudes with different numbers of eyes, different sounds 15 second screen recordings
+- Retool the code so that it communicates with Mariano Sardon's processing code via osc
+- Retool Supercollider code so that starting a playback of an observer is connected with telling processing that that observer should be showing. Then we can add and remove freely.
+
+- Jungle, many layers of eyes.
+- Musical instruments
+- being able to dynamically add and subtract participants, with both visualization and sonification
+- having some way of waiting saccade lengths
+- Code for adding and removing observers both visually and sonically (encapsulate both together?)
+- OSC communication to Processing

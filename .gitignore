@@ -31,3 +31,6 @@ profiling_output.txt
 *.mid
 *.mscz
 *.ogg
+*.jpg
+*.vlw
+*.m4a

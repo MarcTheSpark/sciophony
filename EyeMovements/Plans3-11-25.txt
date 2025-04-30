@@ -1,0 +1,20 @@
+X - Change processing code to not switch X and Y and use vertical display
+X - Change SC visualization to use vertical display
+x- Have SC send regular timing messages to processing
+- Make very simple GUI (2 hours)
+x- Add in other visualization, factored into separate functions
+x- Make visualization state OSC listener
+x- Separate out the SuperCollider code that does the scripting, and make as clear as possible
+- Plenty of examples of SuperCollider controlling various versions of the mapping
+
+
+Make it so that when a sonification is removed, it's always through the cancellation function, so that OnCancel will be called.
+
+In SuperCollider, I want a gui that:
+- let's you select any subset of 30 data streams. Ideally this would be some sort of back on swtiches that you could click on or off, and maybe drag click to do a bunch of them. 
+- has a select all and select none button
+- has a drop down list that lets you choose between different sonification processes to spawn
+- has a start button to start the selected sonification process on the selected streams
+- has a Stop button to stop the sonifications on the given streams
+
+have it draw 1, 2, 3, 4 dots then numerals on top of the square when there is a process running there. Could be an overlay view	
