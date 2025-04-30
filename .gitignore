@@ -34,3 +34,4 @@ profiling_output.txt
 *.jpg
 *.vlw
 *.m4a
+.DS_Store
