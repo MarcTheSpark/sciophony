@@ -31,47 +31,119 @@ class EvolutionMusicRecordingPlayer(threading.Thread):
     def _reset(self):
         self.b = self.snapshots[0][0]
         self.t = self.snapshots[0][1]
-        self.snapshot_index = 0
+        self.snapshot_index = 0.0
 
     def current_snapshot(self):
-        return self.snapshots[self.snapshot_index]
+        lower_idx = int(self.snapshot_index)
+        return self.snapshots[lower_idx]
+
+    def interpolate_beat(self):
+        """Calculates beat interpolated between current and next snapshot."""
+        lower_idx = int(self.snapshot_index)
+        fraction = self.snapshot_index - lower_idx
+
+        # If we're at the last snapshot, return its beat
+        if lower_idx >= len(self.snapshots) - 1:
+            return self.snapshots[lower_idx][0]
+
+        # Otherwise interpolate
+        current_beat = self.snapshots[lower_idx][0]
+        next_beat = self.snapshots[lower_idx + 1][0]
+        return current_beat + fraction * (next_beat - current_beat)
+
+    def interpolate_time(self):
+        """Calculates time interpolated between current and next snapshot."""
+        lower_idx = int(self.snapshot_index)
+        fraction = self.snapshot_index - lower_idx
+
+        # If we're at the last snapshot, return its time
+        if lower_idx >= len(self.snapshots) - 1:
+            return self.snapshots[lower_idx][1]
+
+        # Otherwise interpolate
+        current_time = self.snapshots[lower_idx][1]
+        next_time = self.snapshots[lower_idx + 1][1]
+        return current_time + fraction * (next_time - current_time)
 
     def index_at_beat(self, b):
-        return bisect_left(self._beats, b)
+        idx = bisect_left(self._beats, b)
+
+        # If exact match or at the beginning, return as integer index
+        if idx == 0 or (idx < len(self._beats) and self._beats[idx] == b):
+            return float(idx)
+
+        # Otherwise interpolate
+        if idx >= len(self._beats):  # If beyond the last beat
+            return float(len(self._beats) - 1)
+
+        # Calculate fraction between the two surrounding beats
+        prev_beat = self._beats[idx - 1]
+        next_beat = self._beats[idx]
+        fraction = (b - prev_beat) / (next_beat - prev_beat)
+        return (idx - 1) + fraction
 
     def index_at_time(self, t):
-        return bisect_left(self._times, t)
+        idx = bisect_left(self._times, t)
+
+        # If exact match or at the beginning, return as integer index
+        if idx == 0 or (idx < len(self._times) and self._times[idx] == t):
+            return float(idx)
+
+        # Otherwise interpolate
+        if idx >= len(self._times):  # If beyond the last time
+            return float(len(self._times) - 1)
+
+        # Calculate fraction between the two surrounding times
+        prev_time = self._times[idx - 1]
+        next_time = self._times[idx]
+        fraction = (t - prev_time) / (next_time - prev_time)
+        return (idx - 1) + fraction
 
     def snapshot_at_beat(self, b):
-        return self.snapshots[self.index_at_beat(b)]
+        idx = self.index_at_beat(b)
+        lower_idx = int(idx)
+        # If it's exactly on a snapshot, return that snapshot
+        if idx == lower_idx and lower_idx < len(self.snapshots):
+            return self.snapshots[lower_idx]
+        # Otherwise return the lower snapshot
+        return self.snapshots[lower_idx]
 
     def snapshot_at_time(self, t):
-        return self.snapshots[self.index_at_time(t)]
+        idx = self.index_at_time(t)
+        lower_idx = int(idx)
+        # If it's exactly on a snapshot, return that snapshot
+        if idx == lower_idx and lower_idx < len(self.snapshots):
+            return self.snapshots[lower_idx]
+        # Otherwise return the lower snapshot
+        return self.snapshots[lower_idx]
 
     def advance_time(self, dt):
         self.t += dt
-        while self.time() < self.t:
-            self.snapshot_index += 1
+        target_idx = self.index_at_time(self.t)
+        self.snapshot_index = target_idx
         self.b = self.beat()
 
     def advance_beat(self, db):
         self.b += db
-        while self.beat() < self.b:
-            # advance forward until we are at the given beat
-            self.snapshot_index += 1
+        target_idx = self.index_at_beat(self.b)
+        self.snapshot_index = target_idx
         self.t = self.time()
 
     def go_to_beat(self, b):
         self.snapshot_index = self.index_at_beat(b)
+        self.b = b
+        self.t = self.interpolate_time()
 
     def go_to_time(self, t):
         self.snapshot_index = self.index_at_time(t)
+        self.t = t
+        self.b = self.interpolate_beat()
 
     def beat(self):
-        return self.current_snapshot()[0]
+        return self.interpolate_beat()
 
     def time(self):
-        return self.current_snapshot()[1]
+        return self.interpolate_time()
 
     @property
     def playing_individuals(self):
