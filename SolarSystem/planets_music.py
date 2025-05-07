@@ -51,12 +51,25 @@ class PlanetMusic(threading.Thread):
             neptune_inst = self.s.new_part("Acoustic Bass")
             uranus_inst = self.s.new_part("Acoustic Bass ")
 
+        # # I was using this list of (manually chosen?) angles for some reason, but it seems to work as just every pi/16
+        # # so I'll commit this list anyway, commented out and might delete later
+        # earth_beat_angles = [-1.5252829951042808, -1.1494456403151276, -0.7741796074050398, -0.3970319478625482,
+        #                      -0.015753108422733086, 0.3714288540565829, 0.7655274925949108, 1.1665503282882375,
+        #                      1.5733665990466532, 1.9837885843283756, 2.3949214282796834, 2.8037263353892072,
+        #                      -3.075554997246311, -2.6781964339238695, -2.287894935818636, -1.90407464585718]
+        earth_beat_angles = [-math.pi / 2 + x * math.pi/8 for x in range(16)]
+        earth_beat_angles = [x - 0.1 for x in earth_beat_angles]
+        earth_kick_angles = earth_beat_angles[::4]
+        earth_hihat_angles = [x for x in earth_beat_angles if x not in earth_kick_angles]
+
 
         self.orbit_beats.extend([
-            OrbitBeat(drums2, "mercury", 75, 0.6, 0.25, play_expansion_factor=5),
-            OrbitBeat(drums2, "venus", 69 if self.to_logic else 73, 1, 0.25), #, play_angles=(-0.2, math.pi - 0.2)),
-            OrbitBeat(drums, "earth", 39, 0.5, 0.25), #, play_angles=(-0.2, math.pi-0.2)),
-            OrbitBeat(drums2, "mars", 63, 0.7, 0.25), #, play_angles=(0,  1 / 3 * math.tau, 2 / 3 * math.tau))
+            OrbitBeat(drums2, "mercury", 75, 0.3, 0.25, play_expansion_factor=5,play_angles=(-math.pi/2,)),
+            OrbitBeat(drums2, "venus", 69 if self.to_logic else 73, 1, 0.25,play_angles=(-math.pi/2,)), #, play_angles=(-0.2, math.pi - 0.2)),
+            OrbitBeat(drums, "venus", 39, 0.3, 0.25,play_angles=(-math.pi/2,)), #, play_angles=(-0.2, math.pi-0.2)),
+            OrbitBeat(drums2, "mars", 63, 0.5, 0.25,play_angles=(-math.pi/2,)), #, play_angles=(0,  1 / 3 * math.tau, 2 / 3 * math.tau))
+            OrbitBeat(drums, "earth", 36, 1, 0.25, earth_kick_angles),
+            OrbitBeat(drums, "earth", 42, 0.3, 0.25, earth_hihat_angles),
         ])
 
         self.proximity_alerts.extend([
@@ -91,10 +104,19 @@ class PlanetMusic(threading.Thread):
         with self.started:
             self.started.notify_all()
 
+        wait(10)
         self.orbit_beats[0].muted = False
+        wait(10)
         self.orbit_beats[1].muted = False
-        self.orbit_beats[2].muted = False
+        wait(10)
         self.orbit_beats[3].muted = False
+        wait(10)
+
+        self.orbit_beats[2].muted = False
+
+        wait(5)
+        self.orbit_beats[4].muted = False
+        self.orbit_beats[5].muted = False
         wait(20)
         self.orbit_melodies[7].muted = False
         self.orbit_melodies[6].muted = False

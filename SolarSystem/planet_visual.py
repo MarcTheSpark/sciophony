@@ -9,13 +9,11 @@ import pygame
 import random
 
 
-planet_music = PlanetMusic(to_logic=True)
+planet_music = PlanetMusic(to_logic=False)
 planet_music.start()
 
 
 def solar_system_state():
-#     planet_music.s.rouse_and_hold()
-#     planet_music.s.release_from_suspension()
     return get_solar_system_state(planet_music.s.beat())
 
 

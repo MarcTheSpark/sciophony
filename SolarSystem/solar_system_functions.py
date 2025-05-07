@@ -5,9 +5,7 @@ import itertools
 from scamp import *
 from scamp_extensions.utilities import remap
 import math
-from global_constants import DAYS_PER_BEAT
-
-
+from global_constants import DAYS_PER_BEAT, START_OFFSET
 
 # first run: calculate the solar system model for the next 100000 days
 # ss = SolarSystem(0, 100000)
@@ -25,7 +23,7 @@ def days_to_beats(num_days):
 def get_solar_system_state(beat=None):
     if beat is None:
         beat = current_clock().master.beat()
-    return ss[beat * DAYS_PER_BEAT]
+    return ss[beat * DAYS_PER_BEAT + START_OFFSET]
 
 
 max_planet_speeds = {'mercury': 0.03377467181658569, 'venus': 0.020631344486021684, 'earth': 0.017600297857352575,
@@ -204,10 +202,10 @@ class OrbitBeat:
     inst: ScampInstrument
     planet: str
     pitch: int
-    volume: int
-    note_dur: int
+    volume: float
+    note_dur: float
     play_angles: Sequence[float] = (0,)
-    sample_duration: float = 0.25
+    sample_duration: float = 1/4
     muted: bool = False
     # visual properties
     play_expansion_factor: float = 4
@@ -242,6 +240,7 @@ class ProximityAlert:
     planet_2: str
     distance_threshold: float  # mapped from 0 to 1, where 0 is the closest they get and 1 is the farthest
     pitch: float
+    volume_range: float = (0.2, 1.0)
     sample_duration: float = 0.25
     muted: bool = False
     alerting: bool = dataclasses.field(default=False, init=False)
@@ -264,11 +263,11 @@ class ProximityAlert:
             if d < distance_threshold and not self.muted:
                 self.alerting = True
                 self.inst.play_note(self.pitch,
-                                    remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
+                                    remap(d, *self.volume_range, distance_threshold, min_planet_pair_distances[planet_pair]),
                                     self.sample_duration / 2)
                 wait(self.sample_duration / 4)
                 self.inst.play_note(self.pitch,
-                                    remap(d, 0.2, 1, distance_threshold, min_planet_pair_distances[planet_pair]),
+                                    remap(d, *self.volume_range, distance_threshold, min_planet_pair_distances[planet_pair]),
                                     self.sample_duration / 4)
             else:
                 self.alerting = False
