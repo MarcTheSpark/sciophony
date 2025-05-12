@@ -1,7 +1,5 @@
 """
-Ideas: out of range pitches are played by a repeated, increasing-in-volume, octaves in (violin?)
-harmony?
-Syncopate bass !
+The main player of the "blues milonga" music using OEIS sequence A319419.
 """
 
 import dataclasses
@@ -17,6 +15,9 @@ import itertools
 from freshness_tracker import FreshnessTracker
 
 # playback_settings.recording_file_path = "binary_sequence_slow.wav"
+
+
+NUM_POWERS_OF_2 = 10
 
 
 blues_scale = Scale.blues(42)
@@ -54,9 +55,6 @@ class SequencePlayer:
                 self.inst.play_note(pitch, volume, duration)
             else:
                 wait(duration)
-
-
-NUM_POWERS_OF_2 = 10
 
 
 def pow2_reverse_indices(pow2):
@@ -184,7 +182,7 @@ def main(use_midi=False):
 
 
 if __name__ == '__main__':
-    main(use_midi=True)
+    main(use_midi=False)
 
 # Try the opening loop of pitches, but with duration defined by the bassline thing?
 # Iso-rhythm style?

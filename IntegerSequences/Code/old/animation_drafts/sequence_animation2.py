@@ -57,11 +57,11 @@ def on_draw():
     main_batch.draw()
 
 
-num = None
+current_num_in_music = None
 
 
 def update_drawing(_):
-    global main_batch, num
+    global main_batch, current_num_in_music
     if sequence_blues_milonga.current_num != num:
         num = sequence_blues_milonga.current_num
         main_batch = pyglet.graphics.Batch()

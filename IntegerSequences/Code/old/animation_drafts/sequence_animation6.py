@@ -6,24 +6,26 @@ import pyglet
 from pyglet import shapes
 import sequence_blues_milonga
 from sequence_definitions import A319419
-
-
+from expenvelope import Envelope
+import random
 # Define constants for easy configuration
 WIDTH, HEIGHT = 1920, 1080
-SQUARE_WIDTH = 100
+SQUARE_WIDTH = 150
 BACKGROUND_COLOR = (20, 20, 20, 255)  # Grey background as configured
 
 ONE_FILL = (255, 255, 255, 255)
 ZERO_FILL = (20, 20, 20, 255)
 NEGATIVE_FILL = (170, 0, 0, 255)
 OUTLINE_COLOR = (80, 80, 80, 255)
-OUTLINE_WIDTH = 2
+OUTLINE_WIDTH = 4
 CANCELLED_INDEX_COLOR = (255, 0, 0, 255)
 CANCELLED_LEAD_ZEROS_COLOR = (150, 150, 150, 120)
 
 
 def draw_binary_squares(binary_tup, x, y, square_width, one_fill, zero_fill, negative_fill, outline_color, outline_width,
                         batch=None, shapes_list=None, square_height=None):
+
+    square_height = square_width if square_height is None else square_height
     batch = pyglet.graphics.Batch() if batch is None else batch
     shapes_list = [] if shapes_list is None else shapes_list
 
@@ -32,16 +34,18 @@ def draw_binary_squares(binary_tup, x, y, square_width, one_fill, zero_fill, neg
         fill_color = one_fill if bit == 1 else zero_fill if bit == 0 else negative_fill
         # Create and add a bordered square shape to the batch
         shapes_list.append(
-            shapes.Rectangle(x + i * square_width, y, square_width,
-                             square_height if square_height is not None else square_width,
+            shapes.Rectangle(x + i * square_width, y, square_width, square_height,
                              color=fill_color, batch=batch)
         )
         if outline_color:
-            shapes_list.append(
-                shapes.Box(x + i * square_width, y, square_width,
-                           square_height if square_height is not None else square_width,
-                           thickness=outline_width, color=outline_color, batch=batch)
-            )
+            shapes_list.extend([
+                shapes.Rectangle(x + i * square_width, y + square_height - outline_width, square_width, outline_width, color=outline_color,
+                                 batch=batch),  # Top
+                shapes.Rectangle(x + i * square_width, y, square_width, outline_width, color=outline_color, batch=batch),  # Bottom
+                shapes.Rectangle(x + i * square_width, y, outline_width, square_height, color=outline_color, batch=batch),  # Left
+                shapes.Rectangle(x + (i + 1) * square_width - outline_width, y, outline_width, square_height, color=outline_color,
+                                 batch=batch)  # Right
+            ])
 
     return batch
 
@@ -61,17 +65,30 @@ def on_draw():
     main_batch.draw()
 
 
+HISTORY_LENGTH = 100
+y_curve = Envelope([HEIGHT, (HEIGHT - SQUARE_WIDTH) / 2], [HISTORY_LENGTH], [4])
+square_width_curve = Envelope([SQUARE_WIDTH / 4, SQUARE_WIDTH], [HISTORY_LENGTH], [4])
+
+
 def make_batch(num):
     batch = pyglet.graphics.Batch()
     shapes_list = []
 
     # print(value, bin(value))
-    for i, x in enumerate(range(num, max(0, num - (HEIGHT // SQUARE_WIDTH * 2)), -1)):
+
+    for i, x in enumerate(range(num - HISTORY_LENGTH, num + 1)):
+        if x < 0:
+            continue
         binary = tuple(map(int, f'{x:011b}'))
-        draw_binary_squares(binary, (WIDTH - len(binary) * SQUARE_WIDTH) / 2, HEIGHT - (i/2 + 1) * SQUARE_WIDTH,
-                            SQUARE_WIDTH, ONE_FILL, ZERO_FILL, NEGATIVE_FILL, OUTLINE_COLOR if i == 0 else None,
-                            OUTLINE_WIDTH, square_height=SQUARE_WIDTH if i == 0 else SQUARE_WIDTH / 2, batch=batch,
-                            shapes_list=shapes_list)
+        square_width = square_width_curve.value_at(i)
+        y_position = y_curve.value_at(i)
+        try:
+            jitter = ((math.log2(x) - int(math.log2(x))) ** 3) / 3
+        except ValueError:
+            jitter = 0
+        draw_binary_squares(binary, (WIDTH - len(binary) * square_width) / 2 + random.uniform(-square_width*jitter, square_width*jitter), y_position+ random.uniform(-square_width*jitter, square_width*jitter),
+                            square_width, ONE_FILL, ZERO_FILL, NEGATIVE_FILL, OUTLINE_COLOR if x == num else None,
+                            OUTLINE_WIDTH, batch=batch, shapes_list=shapes_list)
 
     return batch, shapes_list
 
@@ -80,11 +97,11 @@ BATCH_QUEUE_LENGTH = 4
 batches = {i: make_batch(i) for i in range(BATCH_QUEUE_LENGTH)}
 
 
-num = None
+current_num_in_music = None
 
 
 def update_drawing():
-    global main_batch, shapes_drawn, num
+    global main_batch, shapes_drawn, current_num_in_music
     if sequence_blues_milonga.current_num != num:
         num = sequence_blues_milonga.current_num
         main_batch, shapes_drawn = batches[num]

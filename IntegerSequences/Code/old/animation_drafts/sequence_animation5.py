@@ -106,11 +106,11 @@ BATCH_QUEUE_LENGTH = 4
 batches = {i: make_batch(i) for i in range(BATCH_QUEUE_LENGTH)}
 
 
-num = None
+current_num_in_music = None
 
 
 def update_drawing():
-    global main_batch, shapes_drawn, num
+    global main_batch, shapes_drawn, current_num_in_music
     if sequence_blues_milonga.current_num != num:
         num = sequence_blues_milonga.current_num
         main_batch, shapes_drawn = batches[num]

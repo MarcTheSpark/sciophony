@@ -107,14 +107,23 @@ def make_batch(num):
     return batch, shapes_list
 
 
-num = None
+BATCH_QUEUE_LENGTH = 4
+batches = {i: make_batch(i) for i in range(BATCH_QUEUE_LENGTH)}
+
+
+current_num_in_music = None
 
 
 def update_drawing():
-    global main_batch, shapes_drawn, num
+    global main_batch, shapes_drawn, current_num_in_music
     if sequence_blues_milonga.current_num != num:
         num = sequence_blues_milonga.current_num
-        main_batch, shapes_drawn = make_batch(num)
+        main_batch, shapes_drawn = batches[num]
+        del batches[num]
+    elif len(batches) < BATCH_QUEUE_LENGTH:
+        # this causes a new batch to be worked on right after a new batch was used/frame was generated
+        # so it slows things down when they are going to be static for a while
+        batches[max(batches) + 1] = make_batch(max(batches) + 1)
 
 
 threading.Thread(target=sequence_blues_milonga.main, daemon=True).start()
