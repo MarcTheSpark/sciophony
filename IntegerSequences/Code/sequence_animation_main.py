@@ -1,12 +1,8 @@
-import math
 import random
 import threading
-import time
-import numpy as np
 import pyglet
 from pyglet import shapes
 import sequence_blues_milonga
-from sequence_definitions import A319419
 from expenvelope import Envelope
 
 # Define constants for easy configuration
@@ -68,10 +64,10 @@ def on_draw():
     main_batch.draw()
 
 
-i = 0
-
-
 # ------------ FOR SAVING FRAMES ----------
+
+# i = 0
+#
 # @window.event
 # def on_draw():
 #     global i
@@ -94,7 +90,6 @@ row_history = [(-1, 0, 0)] * HISTORY_LENGTH  # (number, x_jitter, y_jitter)
 
 def jitter_from_num(num):
     return random.randint(-20, 20), random.randint(-20, 20)
-
 
 
 def make_new_batch(new_num):

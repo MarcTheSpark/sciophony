@@ -1,0 +1,8 @@
+For each Project:
+- Code folder (clearly labeled with final version(s))
+- Logic File
+- Video
+
+Do a quick review of each, the code for each.
+
+

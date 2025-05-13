@@ -5,7 +5,7 @@ import numpy as np
 import pyglet
 from pyglet import shapes
 import sequence_blues_milonga
-from sequence_definitions import A319419
+from IntegerSequences.Code.old.sequence_definitions import A319419
 
 # Define constants for easy configuration
 WIDTH, HEIGHT = 1920, 1080

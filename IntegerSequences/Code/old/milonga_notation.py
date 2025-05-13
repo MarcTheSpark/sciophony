@@ -12,7 +12,7 @@ from scamp_extensions.pitch import Scale
 from utility_funcs import sort_by_frequency
 from sequence_definitions import A319419
 import itertools
-playback_settings.recording_file_path = "old/binary_sequence.wav"
+playback_settings.recording_file_path = "binary_sequence.wav"
 
 s = Session()
 
@@ -23,7 +23,7 @@ piano_bass = s.new_part("Piano", clef_preference="bass")
 drums1 = s.new_part("Closed Hi-Hat", preset="POWER")
 drums2 = s.new_part("Rim Click", preset="POWER")
 drums3 = s.new_part("Wood Block", preset="POWER")
-drums5 = s.new_part("", "POWER")
+drums4 = s.new_part("", "POWER")
 
 #piano=s.new_midi_part("Piano","IAC Driver Bus 1")
 #bass=s.new_midi_part("slap bass","IAC Driver Bus 2")
@@ -139,10 +139,10 @@ def introduce_new_cycles():
             volume = (count_up / int((len(binary) - 3) * '1', 2)) * 0.5 + 0.5
             pitch = 50 + 3 * count_up % 31 % 19 % 11 % 7 % 5
             # written_pitch = [64, 67, 71, 74, 77][count_up % 31 % 19 % 11 % 7 % 5]
-            drums5.play_note(pitch, volume, 0.25)
-            # drums5.play_note(written_pitch, volume, 0.25, f"pitch = {pitch}")
+            drums4.play_note(pitch, volume, 0.25)
+            # drums4.play_note(written_pitch, volume, 0.25, f"pitch = {pitch}")
         elif i == 0 or i >= 16 and math.log2(i) == int(math.log2(i)):
-            drums5.play_note(49, 1, 2, "accent", blocking=False)
+            drums4.play_note(49, 1, 2, "accent", blocking=False)
             wait(0.25)
         else:
             wait(0.25)

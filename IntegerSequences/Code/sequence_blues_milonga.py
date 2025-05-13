@@ -1,5 +1,9 @@
 """
 The main player of the "blues milonga" music using OEIS sequence A319419.
+
+TODO:
+- make milonga_notation.py obsolete
+- look over the animation widgets, fix the jitter
 """
 
 import dataclasses
@@ -9,8 +13,9 @@ from typing import Callable, Iterable
 from scamp import *
 from scamp_extensions.pitch import Scale
 from scamp_extensions.rhythm import indispensability_array_from_expression
+from scamp_extensions.playback.multi_staff_instrument import MultiStaffInstrument
 from utility_funcs import sort_by_frequency
-from sequence_definitions import A319419
+from IntegerSequences.Code.old.sequence_definitions import A319419
 import itertools
 from freshness_tracker import FreshnessTracker
 
@@ -18,7 +23,15 @@ from freshness_tracker import FreshnessTracker
 
 
 NUM_POWERS_OF_2 = 10
+PLAY_INTRO = True
 
+SEND_MIDI_TO_LOGIC = False
+MUSIC_XML_EXPORT_PATH = None  # "Notation/test.musicxml"   # set to export musicxml
+MIDI_EXPORT_PATH = None
+
+# INSTRUMENTS_TO_TRANSCRIBE = ["Closed Hi-Hat", "Rim Click", "Wood Block", "Assorted Perc", "bass", "piano"]
+INSTRUMENTS_TO_TRANSCRIBE = None  # None = all
+FAST_FORWARD = (MUSIC_XML_EXPORT_PATH or MIDI_EXPORT_PATH)
 
 blues_scale = Scale.blues(42)
 
@@ -110,7 +123,7 @@ def introduce_new_cycles(drum_inst):
 current_num = None
 
 
-def main(use_midi=False):
+def main(use_midi=False, transcription_path=None, instruments_to_transcribe=None):
     global current_num
 
     s = Session()
@@ -118,16 +131,34 @@ def main(use_midi=False):
     s.tempo = 120
 
     if use_midi:
-        piano = s.new_midi_part("Piano","IAC Driver Bus 1")
-        bass =s.new_midi_part("slap bass","IAC Driver Bus 2")
-        drums = s.new_midi_part("POWER","IAC Driver Bus 3")
-    else:
-        piano = s.new_part("Piano")
-        bass = s.new_part("slap bass")
-        drums = s.new_part("POWER")
+        piano = MultiStaffInstrument("piano", [
+            s.new_midi_part("piano", "IAC Driver Bus 1"),
+            s.new_midi_part("piano", "IAC Driver Bus 1")
+        ])
 
-    # s.start_transcribing()
-    # s.fast_forward()
+        bass = s.new_midi_part("bass", "IAC Driver Bus 2")
+        drums1 = s.new_part("Closed Hi-Hat", "IAC Driver Bus 3")
+        drums2 = s.new_part("Rim Click", "IAC Driver Bus 3")
+        drums3 = s.new_part("Wood Block", "IAC Driver Bus 3")
+        drums4 = s.new_part("Assorted Perc", "IAC Driver Bus 3")
+
+    else:
+        piano = MultiStaffInstrument("piano", [
+            s.new_part("piano", preset="Piano"),
+            s.new_part("piano", preset="Piano")
+        ])
+        bass = s.new_part("bass", preset="slap bass")
+        drums1 = s.new_part("Closed Hi-Hat", preset="POWER")
+        drums2 = s.new_part("Rim Click", preset="POWER")
+        drums3 = s.new_part("Wood Block", preset="POWER")
+        drums4 = s.new_part("Assorted Perc", "POWER")
+
+    if MUSIC_XML_EXPORT_PATH or MIDI_EXPORT_PATH:
+        s.start_transcribing([inst for inst in s.instruments
+                              if INSTRUMENTS_TO_TRANSCRIBE is None or inst.name in INSTRUMENTS_TO_TRANSCRIBE])
+
+    if FAST_FORWARD:
+        s.fast_forward()
 
     main_sequence_player = SequencePlayer(
         piano, A319419_symmetry, milonga_volume_loop, [1 / 4],
@@ -136,7 +167,7 @@ def main(use_midi=False):
     )
     high_beats = dataclasses.replace(
         main_sequence_player,
-        inst=drums,
+        inst=drums1,
         volumes=[1],
         play_condition=lambda n, x: x > 10,
         pitch_transformation=lambda n, p: 42
@@ -144,17 +175,19 @@ def main(use_midi=False):
     multiples_of_2 = dataclasses.replace(
         main_sequence_player,
         volumes=[1],
-        inst=drums,
+        inst=drums2,
         pitch_transformation=lambda n, p: 33,
         play_condition=lambda n, x: x > 0 and x % 2 == 0
     )
     multiples_of_5 = dataclasses.replace(
         multiples_of_2,
+        inst=drums3,
         play_condition=lambda n, x: x > 0 and x % 5 == 0,
         pitch_transformation=lambda n, p: 76
     )
     multiples_of_7 = dataclasses.replace(
         multiples_of_5,
+        inst=drums3,
         play_condition=lambda n, x: x > 0 and x % 7 == 0
     )
     intro = dataclasses.replace(
@@ -164,9 +197,13 @@ def main(use_midi=False):
         stop_n=24
     )
 
-    intro.play()
-    play_clicks(drums, 4)
-    fork(introduce_new_cycles, args=(drums, ))
+    if PLAY_INTRO:
+        intro.play()
+        play_clicks(drums1, 4)
+        time_sigs_list = ["2/4"] * 4 + ["3/4"] + ["2/4", "2/4", "3/8", "2/4"]
+    else:
+        time_sigs_list = ["2/4"]
+    fork(introduce_new_cycles, args=(drums4, ))
     fork(multiples_of_2.play)
     fork(multiples_of_5.play)
     fork(multiples_of_7.play)
@@ -178,11 +215,17 @@ def main(use_midi=False):
         current_num = x
         wait(0.25)
 
-    # s.stop_transcribing().export_to_midi_file("milongaMidiFull.mid")
+    if MUSIC_XML_EXPORT_PATH or MIDI_EXPORT_PATH:
+        perf = s.stop_transcribing()
+        if MUSIC_XML_EXPORT_PATH:
+            perf.to_score(time_signature=time_sigs_list).export_music_xml(MUSIC_XML_EXPORT_PATH)
+        if MIDI_EXPORT_PATH:
+            perf.export_to_midi_file(MIDI_EXPORT_PATH)
 
 
 if __name__ == '__main__':
-    main(use_midi=False)
+    main(use_midi=SEND_MIDI_TO_LOGIC)
+
 
 # Try the opening loop of pitches, but with duration defined by the bassline thing?
 # Iso-rhythm style?
