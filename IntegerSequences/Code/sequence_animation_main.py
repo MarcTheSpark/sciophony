@@ -1,3 +1,4 @@
+import math
 import random
 import threading
 import pyglet
@@ -85,11 +86,19 @@ y_curve = Envelope([HEIGHT, (HEIGHT - SQUARE_WIDTH) / 2], [HISTORY_LENGTH], [4])
 square_width_curve = Envelope([SQUARE_WIDTH / 4, SQUARE_WIDTH], [HISTORY_LENGTH], [4])
 
 
-row_history = [(-1, 0, 0)] * HISTORY_LENGTH  # (number, x_jitter, y_jitter)
+row_history = [-1] * HISTORY_LENGTH
+jitter_history: list[float | None] = [None] * HISTORY_LENGTH
 
 
 def jitter_from_num(num):
-    return random.randint(-20, 20), random.randint(-20, 20)
+    from scamp_extensions.utilities import floor_x_to_pow_of_y
+    if num < 4:
+        progress_to_next_pow_of_2 = 0
+    else:
+        last_power_of_2 = floor_x_to_pow_of_y(num, 2)
+        progress_to_next_pow_of_2 = (num - last_power_of_2) / last_power_of_2
+    random.seed(num)
+    return progress_to_next_pow_of_2 * 20
 
 
 def make_new_batch(new_num):
@@ -97,18 +106,26 @@ def make_new_batch(new_num):
     shapes_list = []
 
     row_history.pop(0)
-    row_history.append((new_num, *jitter_from_num(new_num)))
+    row_history.append(new_num)
+    jitter_history.pop(0)
+    jitter_history.append(random.uniform(0, math.tau))  # the angle of the jitter remains constant
+    jitter_amount = jitter_from_num(new_num)
 
-    for i, (n, x_jitter, y_jitter) in enumerate(row_history):
+    for i, n in enumerate(row_history):
         if n < 0:
             continue
         binary = tuple(map(int, f'{n:010b}'))
         square_width = square_width_curve.value_at(i)
         y_position = y_curve.value_at(i)
+
+        proximity = square_width / square_width_curve.value_at(len(row_history))
+
+        x_jitter = math.cos(jitter_history[i]) * jitter_amount * proximity
+        y_jitter = math.sin(jitter_history[i]) * jitter_amount * proximity
         # decrease as you go back
-        x_jitter, y_jitter = jitter_from_num(new_num)
         draw_binary_squares(binary, (WIDTH - len(binary) * square_width) / 2 + x_jitter, y_position + y_jitter,
-                            square_width, ONE_FILL, ZERO_FILL, NEGATIVE_FILL, OUTLINE_COLOR if i == len(row_history) - 1 else None,
+                            square_width, ONE_FILL, ZERO_FILL, NEGATIVE_FILL,
+                            OUTLINE_COLOR if i == len(row_history) - 1 else None,
                             OUTLINE_WIDTH, batch=batch, shapes_list=shapes_list)
 
     return batch, shapes_list
