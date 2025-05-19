@@ -5,7 +5,7 @@ import numpy as np
 import pyglet
 from pyglet import shapes
 import sequence_blues_milonga
-from IntegerSequences.Code.old.sequence_definitions import A319419
+from sequence_definitions import A319419
 
 # Define constants for easy configuration
 WIDTH, HEIGHT = 1920, 1080
@@ -206,10 +206,11 @@ def on_draw():
 
 
 current_num_in_music = None
+num = None
 
 
 def update_drawing(_):
-    global main_batch, current_num_in_music
+    global main_batch, current_num_in_music, num
     if sequence_blues_milonga.current_num != num:
         num = sequence_blues_milonga.current_num
         value = A319419(num)

@@ -15,7 +15,7 @@ from scamp_extensions.pitch import Scale
 from scamp_extensions.rhythm import indispensability_array_from_expression
 from scamp_extensions.playback.multi_staff_instrument import MultiStaffInstrument
 from utility_funcs import sort_by_frequency
-from IntegerSequences.Code.old.sequence_definitions import A319419
+from sequence_definitions import A319419
 import itertools
 from freshness_tracker import FreshnessTracker
 
@@ -123,7 +123,7 @@ def introduce_new_cycles(drum_inst):
 current_num = None
 
 
-def main(use_midi=False, transcription_path=None, instruments_to_transcribe=None):
+def main(use_midi=False):
     global current_num
 
     s = Session()

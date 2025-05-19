@@ -4,8 +4,6 @@ harmony?
 Syncopate bass
 """
 
-import itertools
-
 import dataclasses
 from typing import Callable, Iterable
 

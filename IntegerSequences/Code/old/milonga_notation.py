@@ -10,7 +10,7 @@ from typing import Callable, Iterable
 from scamp import *
 from scamp_extensions.pitch import Scale
 from utility_funcs import sort_by_frequency
-from sequence_definitions import A319419
+from IntegerSequences.Code.sequence_definitions import A319419
 import itertools
 playback_settings.recording_file_path = "binary_sequence.wav"
 
