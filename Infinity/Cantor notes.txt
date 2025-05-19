@@ -1,0 +1,12 @@
+- Mostly void
+- long notes dynamic
+- mixing different levels while accelerating
+- When cantor set gets too fast, it fades out and you add a new slower one
+- Could have 5 levels active at the same time, accelerate until the fasted level is too fast, then remove it, and and a new slowest level.
+- Does it change instrument as a single cantor player goes on, or do new added levels change instrumentation? Mariano says #1 or different instruments kill at different points.
+
+- Cantor2 sounded most like cantor
+
+- The chuck one didn’t quite *feel* like the cantor set. Lack of sustain could be the problem?
+
+- adding sine waves/interference patterns. Sine waves of 3x frequency each time. (See drawing)

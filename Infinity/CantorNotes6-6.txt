@@ -1,0 +1,16 @@
+To do:
+- make it so that more arbitrary sounds/gestures can be played. Like a function of i that does stuff.
+- improve acceleration
+- Maybe do it all with calculations instead of tempo? Some kind of automatic normalization?
+- use a repeated sound instead of a metronome?
+- rhythm gets bigger drums over time? Maybe it's slower/sparser?
+
+Is there a way to make it so that we can copy/paste layers and it's always the same?
+
+FIRST, in SCAMP, figure out the ABSOLUTE/duration rest values
+
+AND NEED to fix the accelerating to be sparser *and* more multi-scale. Can we make it match in acceleration.
+
+
+FORM:
+Start's with high piano, ends with low piano. More chaotic in the middle? Something that makes you want to move/dance. An accelerating beat comes in and gets exciting, and then fades out.
