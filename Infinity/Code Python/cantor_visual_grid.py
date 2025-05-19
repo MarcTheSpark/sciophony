@@ -2,11 +2,16 @@ from cantor_tempo_utils import get_metronome_subdivisions, get_tempo_tripling_du
 from itertools import accumulate
 import pygame
 
+LINE_IMG = "line_images/DashedLine.png"
+GRID_DEPTH = 3
+MIN_LINE_WIDTH = 2
+MAX_LINE_WIDTH = 15
+
 tripling_time = get_tempo_tripling_dur(scaling_factor=2.4092913453966096)
 
 grids_by_heirarchy = [
     tuple(accumulate(get_metronome_subdivisions(2, i, scaling_factor=2.4092913453966096)))
-    for i in range(3)
+    for i in range(GRID_DEPTH)
 ]
 
 grids_by_heirarchy.insert(0, grids_by_heirarchy[0][2::3])
@@ -18,7 +23,6 @@ grids_by_heirarchy = grids_by_heirarchy[:1] + [
     for last_grid, this_grid in zip(grids_by_heirarchy, grids_by_heirarchy[1:])
 ]
 
-
 # Initialize pygame
 pygame.init()
 clock = pygame.time.Clock()
@@ -29,7 +33,7 @@ ASPECT = WIDTH / HEIGHT
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Cantor Visualization")
 
-dashed_line_image = pygame.image.load("GradientLine.png").convert_alpha()
+dashed_line_image = pygame.image.load(LINE_IMG).convert_alpha()
 
 
 current_time = 0
@@ -64,10 +68,10 @@ while True:
         for grid_line in grid:
             x_pos = t_to_x(grid_line, time_at_left=mod_current_time)
             opacity = 255 * (i + 1 - progress) / len(grids_by_heirarchy)
-            
-            # Adjust the width (thickness) of the line
-            # NOTE: Line thickness is really being floored in the actual drawing, leading to some jerkiness
-            line_thickness = 20 + 3 ** (i - progress)
+
+            thickness_factor = (3 ** (i-progress)) / 3 ** GRID_DEPTH
+            line_thickness = MIN_LINE_WIDTH + (MAX_LINE_WIDTH - MIN_LINE_WIDTH) * thickness_factor
+
             blit_dashed_line(screen, dashed_line_image, x_pos - line_thickness / 2, line_thickness, opacity)
     
     pygame.display.flip()

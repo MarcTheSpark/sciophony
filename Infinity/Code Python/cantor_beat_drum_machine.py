@@ -1,3 +1,7 @@
+"""
+Makes an uneven cantor-like rhythm, which was kind of interesting with the rest of the music.
+"""
+
 from dataclasses import dataclass, field
 from scamp import *
 from scamp_extensions.utilities import TimeVaryingParameter
@@ -77,7 +81,7 @@ snare_line = DrumLine(drum_kit, 38, (-1.25, 0.75, 0.75, -2.25, 0.75, 0.75),
 
 main_loop = DrumLoop([kick_line, hihat_line, snare_line], rate_mul=6.5/4)
 
-main_loop.play(True  )
+main_loop.play(True)
 
 
 # probability of playing a note

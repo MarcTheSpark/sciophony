@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from cantor_tempo_utils import get_tempo_tripling_dur, get_first_dur, get_metronome_subdivisions, get_cantor_note_rest_pairs
+from cantor_tempo_utils import (get_tempo_tripling_dur, get_first_dur, get_metronome_subdivisions,
+                                get_cantor_note_rest_pairs)
 from abc import ABC, abstractmethod
 from typing import Sequence, Callable
 from scamp import ScampInstrument, wait_for_children_to_finish, wait, Envelope
@@ -22,14 +23,11 @@ class Environment:
     def get_metronome_durs(self, num_tripling_cycles, subdivision_depth):
         return get_metronome_subdivisions(num_tripling_cycles, subdivision_depth, self.scaling_factor)
     
-    
     def get_cantor_note_rest_pairs(self, min_note_dur=0.002):
         return get_cantor_note_rest_pairs(self.scaling_factor, min_note_dur=min_note_dur)
-            
 
 
 default_environment = Environment()
-
 
 
 def _get_default_environment():
@@ -61,8 +59,7 @@ class CantorOrchestration:
     def end_play(self):
         """Override if action is needed at the end of playing this orchestration"""
         pass
-    
-    
+
     def note_rest_pairs(self):
         return get_cantor_note_rest_pairs(
             scaling_factor=self.environment.scaling_factor * self.further_scaling,
@@ -143,7 +140,6 @@ class CantorChords(CantorOrchestration):
             self.instrument.play_chord(pitches, volume, dur)
 
 
-
 @dataclass
 class MetronomeOrchestration:
     num_tripling_cycles: int
@@ -170,8 +166,7 @@ class MetronomeOrchestration:
     def end_play(self):
         """Override if action is needed at the end of playing this orchestration"""
         pass
-    
-    
+
     def tick_durs(self):
         return get_metronome_subdivisions(self.num_tripling_cycles, self.subdivision_depth,
                                           self.environment.scaling_factor * self.further_scaling)
@@ -188,9 +183,9 @@ class MetronomeOrchestration:
 
 @dataclass(init=False)
 class MetronomeSwell(MetronomeOrchestration):
-    instrument: ScampInstrument
-    pitch: float
-    swell_env: Envelope
+    instrument: ScampInstrument = None
+    pitch: float = None
+    swell_env: Envelope = None
     subdivision_depth: int = 0
     
     def __init__(self, instrument, pitch, swell_env, subdivision_depth=0, **kwargs):
@@ -199,7 +194,6 @@ class MetronomeSwell(MetronomeOrchestration):
         self.swell_env = swell_env
         self.subdivision_depth = subdivision_depth
         super().__init__(math.ceil(swell_env.length()), subdivision_depth, **kwargs)
-        
-    
+
     def play_tick(self, i, tripling_progress, dur):
         self.instrument.play_note(self.pitch, self.swell_env.value_at(tripling_progress), dur)

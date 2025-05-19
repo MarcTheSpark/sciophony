@@ -1,5 +1,4 @@
 from cantor_orchestration import CantorChords, CantorMelody, MetronomeSwell, default_environment
-import cantor_tempo_utils
 import itertools
 from scamp import *
 
@@ -31,43 +30,6 @@ else:
     drum_kit = s.new_part("power")  #s.new_midi_part("drum kit", "IAC driver BUS 6")
 
 
-drum_loop = {
-    "kick": (0, 2.75),
-    "hihat": (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.5, 3.25,
-              3.5, 3.75, 4.0, 4.25, 4.5, 4.75, 5.5, 6.25),
-    "snare": (1.25, 2.0, 5, 5.75),
-}
-
-
-# probability of playing a note
-# doubling strokes (1 -> 0.25, 0.25, -0.5
-# shifting parts forward or back, randomly
-
-
-def play_drum_loop():
-    current_clock().rate = 6.5/4
-    while True:
-        print(s.beat())
-        drum_kit.play_note(36, 1, 0.5)
-        for _ in range(6):
-            drum_kit.play_note(42, 1, 0.25)
-        drum_kit.play_note(38, 1, 0.5)
-        drum_kit.play_note(42, 1, 0.25)
-        drum_kit.play_note(36, 1, 0.5)
-        for _ in range(7):
-            drum_kit.play_note(42, 1, 0.25)
-        for _ in range(2):
-            drum_kit.play_note(38, 1, 0.5)
-            drum_kit.play_note(42, 1, 0.25)
-    
-# s.start_transcribing(drum_kit)
-# fork(play_drum_loop)
-# s.fast_forward()
-# wait(60)
-# s.stop_transcribing().export_to_midi_file("drum.mid")
-# 
-# exit()
-
 if MIDI_EXPORT:
     s.start_transcribing()
     s.fast_forward()
@@ -92,14 +54,11 @@ def log_tripling():
         tripling_indicator.play_note(60 + (2 * i) % 8, 1.0, 0.25, blocking=False)
         wait(default_environment.tripling_time)
         i += 1
-    
-
-
 
 
 # fork(log_tripling)
 
-guitar_chords =[(58,63,68),(61,63,64)]
+guitar_chords = [(58, 63, 68), (61, 63, 64)]
 
 score = [
     (0, lambda: cantor_cascade(2, 0.7)),
