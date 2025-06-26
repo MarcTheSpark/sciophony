@@ -35,3 +35,5 @@ profiling_output.txt
 *.vlw
 *.m4a
 .DS_Store
+.mscbackup
+FinalStructure.txt
