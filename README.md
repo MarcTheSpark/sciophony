@@ -1,4 +1,4 @@
-# Scientophony
+# Sciophony
 
 This collaboration by Dr. Sigman, and Dr. Evanstein has focused on creating music and visualizations representing eight different areas of science and scientific discovery, ranging from the process of evolution, to the discovery of the periodic table, to the dance of the planets within the solar system. In some cases these works are based on data; for example, in the "Periodic Table" movement we sonify the elements based on their specific heat, atomic radius, electronegativity, and radioactivity.  In other cases, they are based on simulations; for example, in the "Life" movement, the music is driven by a simulation of Conway's game of life, where the detection of certain "life forms" is accompanied by fitting sonifications.
 
