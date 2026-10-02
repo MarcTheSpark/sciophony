@@ -13,21 +13,29 @@ with a one-row vertical scroll. Here that step simply never stops:
     after every tripling the picture is the same as it was one tripling
     earlier, one generation deeper — an endless fractal dive.
 
-Beams no longer come from a hand-timed list. A new beam fires every
-BEAM_INTERVAL seconds (5), each on the next row down and each in the next
-colour of BEAM_COLORS (yellow, blue, then the rest of the palette). Because the
-scroll moves only 5/8 of a row between beams, successive beams creep down the
-screen; once one would land deeper than BEAM_MAX_DEPTH rows below the top it
-wraps back up BEAM_WRAP_ROWS rows. Extra hand-placed beams can still be added
+Beams no longer come from a hand-timed list. A new full beam fires every
+BEAM_INTERVAL seconds (5), each in the next colour of BEAM_COLORS (yellow,
+blue, then the rest of the palette). Like the original single cantor_beam, a
+full beam starts at the top row and works its way down the figure row by row,
+for BEAM_NUM_ROWS rows. It reaches a new row every BEAM_ROW_PERIOD seconds (4),
+faster than the scroll's one row per 8 s, so each beam descends the screen.
+Since a beam lives for about a minute, a dozen or so overlap at once,
+staggered in colour down the screen. Extra hand-placed beams can still be added
 to EXTRA_BEAMS.
 
-Each beam sweeps its row with the classic cantor_beam geometry (centre→out on
-a solid bar, then alternating outer→inner / inner→outer, jumping the gaps), but
-measured in the sub-figure that fits on screen when the sweep ends, so the
-whole sweep stays in view however deep the zoom has gone. Within the sweep the
-beam accelerates exactly as a row of the Cantor tempo curve does (it is 1.5x
-faster at the end than at the start), and it keeps the lingering fill of the
-earlier versions: a LINGER_ALPHA trail that fades over LINGER_FADE_TIME.
+The row timing is the steady state of the Cantor tempo curve that
+scantimes.py follows (row n spans beats [2·3^(n-1), 3^n] of a curve whose
+tempo triples every BEAM_ROW_PERIOD): each row takes BEAM_ROW_PERIOD·log3(1.5)
+seconds to sweep, accelerating so it is 1.5x faster at the end than at the
+start, followed by a rest. Written in closed form, it carries on for
+unboundedly many rows (scantimes' tempo curve stops after 17).
+
+Each row is swept with the classic cantor_beam geometry (centre→out on a solid
+bar, then alternating outer→inner / inner→outer, jumping the gaps), but
+measured in the sub-figure that fits on screen when that row's sweep ends, so
+the sweep stays in view however deep the zoom has gone. It keeps the lingering
+fill of the earlier versions: a LINGER_ALPHA trail that fades over
+LINGER_FADE_TIME.
 
 Rendering an endless zoom
 -------------------------
@@ -90,13 +98,14 @@ BAR_COLOR = (50, 50, 50)
 
 
 # --- Scheduled beams ---
-# Beam n fires at BEAM_FIRST_TIME + n * BEAM_INTERVAL, in colour
-# BEAM_COLORS[n % len(BEAM_COLORS)], on row BEAM_FIRST_ROW + n * BEAM_ROW_STEP
-# (wrapped back up the screen as described below).
+# Full beam n fires at BEAM_FIRST_TIME + n * BEAM_INTERVAL, in colour
+# BEAM_COLORS[n % len(BEAM_COLORS)], entering the first row at least
+# BEAM_START_DEPTH rows below the top row (the one at ROW_TOP_FRAC), then
+# continuing down one row every BEAM_ROW_PERIOD seconds for BEAM_NUM_ROWS rows.
 BEAM_FIRST_TIME = 5.0
 BEAM_INTERVAL = 5.0
-BEAM_FIRST_ROW = 1
-BEAM_ROW_STEP = 1
+BEAM_START_DEPTH = 0.0
+BEAM_NUM_ROWS = 14
 
 # The first two are scroll2's yellow and blue; the rest continue the cycle.
 BEAM_COLORS = [
@@ -110,25 +119,22 @@ BEAM_COLORS = [
     (250, 60, 60),      # red
 ]
 
-# Seconds a beam takes to sweep its row (progress 0 → 1). scroll2's rows took
-# about 3.7 s; this is a little quicker to suit the 5 s spacing.
-BEAM_SWEEP_TIME = 3.0
+# Seconds between a full beam entering one row and the next (the tripling time
+# of its tempo curve). Each row's sweep takes BEAM_ROW_PERIOD * log3(1.5)
+# (~37%) of it, the rest is the Cantor rest. 4 s is the project's usual
+# tripling_time (scaling_factor 2.409...); scroll2's beam used ~10 s, but here
+# it has to outpace the scroll (one row per HZOOM_TRIPLING_TIME / rows per
+# tripling = 8 s) or the beams would slide off the top of the screen.
+BEAM_ROW_PERIOD = 4.0
 
-# Beams step down one row every 5 s while the scroll advances only 5/8 of a row,
-# so they creep down the screen. A beam that would start more than
-# BEAM_MAX_DEPTH rows below the top row (the one at ROW_TOP_FRAC) is moved up
-# BEAM_WRAP_ROWS rows (as often as needed) instead.
-BEAM_MAX_DEPTH = 6.5
-BEAM_WRAP_ROWS = 6
-
-# Which sub-figure a beam's sweep geometry is measured in. 0: the one that fits
+# Which sub-figure a row's sweep geometry is measured in. 0: the one that fits
 # on screen when the sweep ends — rows get the classic mirrored pair of beams
 # (or centre→out on a solid bar). 1: its parent, of which only the right third
 # is on screen — a single beam crosses the row, like the late rows of scroll2.
 BEAM_FRAME_OFFSET = 0
 
-# Extra hand-placed beams, drawn on top of the schedule. Each entry is
-#   (color (r,g,b), start_time seconds, sweep_time seconds, row)
+# Extra hand-placed full beams, drawn on top of the schedule. Each entry is
+#   (color (r,g,b), start_time seconds, row_period seconds, start_row, num_rows)
 EXTRA_BEAMS = []
 
 
@@ -444,7 +450,7 @@ def _linger_fade(t: float, row_end_time: float) -> float:
 
 
 def beam_generation(start_time: float, sweep_time: float, row: int) -> int:
-    """Sub-figure a beam's sweep geometry is measured in.
+    """Sub-figure a row sweep's geometry is measured in.
 
     The deepest generation (at most the row's own) whose sub-figure has its
     left end on screen when the sweep finishes, so the whole sweep stays in
@@ -455,8 +461,9 @@ def beam_generation(start_time: float, sweep_time: float, row: int) -> int:
     return max(0, min(row, fit) - BEAM_FRAME_OFFSET)
 
 
-def draw_beam_instance(surface, t: float, color, start_time: float,
-                       sweep_time: float, row: int):
+def draw_row_sweep(surface, t: float, color, start_time: float,
+                   sweep_time: float, row: int):
+    """One row of a full beam: the moving glow plus its lingering fill."""
     if t < start_time:
         return
     h = bar_h_px()
@@ -482,8 +489,8 @@ def draw_beam_instance(surface, t: float, color, start_time: float,
     _blit_row_light(surface, row, color, np.maximum(fill, glow))
 
 
-def _beam_lifetime(sweep_time: float) -> float:
-    """Seconds from a beam's start until both its glow and trail are gone
+def _row_lifetime(sweep_time: float) -> float:
+    """Seconds from a row sweep's start until both its glow and trail are gone
     (infinite if trails never fade)."""
     if not LINGER_FADE_TIME or LINGER_FADE_TIME <= 0:
         return math.inf
@@ -491,23 +498,48 @@ def _beam_lifetime(sweep_time: float) -> float:
     return max(glow_end, sweep_time + LINGER_FADE_TIME)
 
 
+def _sweep_time(row_period: float) -> float:
+    """Sweep length of one row of a full beam: the Cantor row [2b, 3b] takes
+    log3(1.5) of the tempo curve's tripling time."""
+    return row_period * math.log(1.5, 3)
+
+
+def draw_beam_instance(surface, t: float, color, start_time: float,
+                       row_period: float, start_row: int, num_rows: int):
+    """A full beam: enters start_row at start_time, then each following row
+    every row_period seconds, for num_rows rows."""
+    if t < start_time or num_rows <= 0:
+        return
+    sweep_time = _sweep_time(row_period)
+    elapsed = t - start_time
+    newest = min(num_rows - 1, math.floor(elapsed / row_period))
+    life = _row_lifetime(sweep_time)
+    oldest = 0 if math.isinf(life) else max(0, math.floor((elapsed - life) / row_period))
+    for k in range(oldest, newest + 1):
+        draw_row_sweep(surface, t, color, start_time + k * row_period,
+                       sweep_time, start_row + k)
+
+
+def _beam_lifetime(row_period: float, num_rows: int) -> float:
+    """Seconds from a full beam's start until its last row has faded."""
+    return (num_rows - 1) * row_period + _row_lifetime(_sweep_time(row_period))
+
+
 def scheduled_beam(n: int):
-    """(color, start_time, sweep_time, row) of the n-th scheduled beam."""
+    """(color, start_time, row_period, start_row, num_rows) of the n-th
+    scheduled full beam."""
     start = BEAM_FIRST_TIME + n * BEAM_INTERVAL
-    row = BEAM_FIRST_ROW + n * BEAM_ROW_STEP
-    depth = row - camera_position(start)
-    if BEAM_WRAP_ROWS > 0 and depth > BEAM_MAX_DEPTH:
-        row -= BEAM_WRAP_ROWS * math.ceil((depth - BEAM_MAX_DEPTH) / BEAM_WRAP_ROWS)
+    start_row = max(0, math.ceil(camera_position(start) + BEAM_START_DEPTH))
     color = BEAM_COLORS[n % len(BEAM_COLORS)]
-    return color, start, BEAM_SWEEP_TIME, max(0, row)
+    return color, start, BEAM_ROW_PERIOD, start_row, BEAM_NUM_ROWS
 
 
 def active_beams(t: float):
-    """Scheduled beams (oldest first) that may still be visible at time t,
+    """Scheduled full beams (oldest first) that may still be visible at time t,
     followed by EXTRA_BEAMS."""
     if BEAM_INTERVAL > 0 and t >= BEAM_FIRST_TIME:
         newest = math.floor((t - BEAM_FIRST_TIME) / BEAM_INTERVAL)
-        life = _beam_lifetime(BEAM_SWEEP_TIME)
+        life = _beam_lifetime(BEAM_ROW_PERIOD, BEAM_NUM_ROWS)
         if math.isinf(life):
             oldest = 0
         else:
@@ -521,8 +553,8 @@ def draw_scene(surface, t: float):
     _set_frame(t)
     surface.fill(BG_COLOR)
     draw_static_bars(surface)
-    for color, start_time, sweep_time, row in active_beams(t):
-        draw_beam_instance(surface, t, color, start_time, sweep_time, row)
+    for beam in active_beams(t):
+        draw_beam_instance(surface, t, *beam)
 
 
 # ── Soundtrack ───────────────────────────────────────────────────────
@@ -615,7 +647,7 @@ KEEP_FRAMES = False
 def main():
     global LINGER_ALPHA, LINGER_FADE_TIME
     global HZOOM_TRIPLING_TIME, SCROLL_ROWS_PER_TRIPLING, MOTION_START_TIME
-    global BEAM_INTERVAL
+    global BEAM_INTERVAL, BEAM_ROW_PERIOD, BEAM_NUM_ROWS
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--render", action=argparse.BooleanOptionalAction,
@@ -638,7 +670,11 @@ def main():
     parser.add_argument("--motion-start", type=float, default=MOTION_START_TIME,
                         help="Time in seconds at which the zoom and scroll begin")
     parser.add_argument("--beam-interval", type=float, default=BEAM_INTERVAL,
-                        help="Seconds between scheduled beams")
+                        help="Seconds between scheduled full beams")
+    parser.add_argument("--beam-row-period", type=float, default=BEAM_ROW_PERIOD,
+                        help="Seconds for a full beam to advance one row")
+    parser.add_argument("--beam-rows", type=int, default=BEAM_NUM_ROWS,
+                        help="Rows each full beam sweeps before stopping")
     parser.add_argument("--soundtrack", default=SOUNDTRACK,
                         help="Audio track under the animation (default: "
                              "InfinitySoundtrack.mp3). Plays live in interactive "
@@ -659,6 +695,8 @@ def main():
     SCROLL_ROWS_PER_TRIPLING = args.rows_per_tripling
     MOTION_START_TIME = args.motion_start
     BEAM_INTERVAL = args.beam_interval
+    BEAM_ROW_PERIOD = args.beam_row_period
+    BEAM_NUM_ROWS = args.beam_rows
 
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
