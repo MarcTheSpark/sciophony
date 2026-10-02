@@ -1,57 +1,35 @@
 """
-cantor_beam_linger_scroll3.py — an endless self-similar zoom with scheduled beams.
+cantor_beam_linger_scroll3.py — cantor_beam_linger_scroll with changing
+colours and an endless self-similar zoom.
 
-A variant of cantor_beam_linger_scroll2.py. There the figure took a single
-self-similar step: one 3x horizontal zoom onto its right-hand third, paired
-with a one-row vertical scroll. Here that step simply never stops:
+This is cantor_beam_linger_scroll.py with two changes:
 
-  - the figure stretches horizontally by 3x every HZOOM_TRIPLING_TIME seconds
-    (8 by default), at a perfectly steady geometric rate, homing in on the
-    right-hand end of the Cantor set (the same fixed point as scroll2's step:
-    its right edge stays put on screen while everything else grows leftward);
-  - the camera scrolls down SCROLL_ROWS_PER_TRIPLING rows (1) per tripling, so
-    after every tripling the picture is the same as it was one tripling
-    earlier, one generation deeper — an endless fractal dive.
+  - every new beam comes in a new colour (yellow, blue, pink, green, orange,
+    violet, cyan, red, then round again);
+  - the figure zooms: it stretches horizontally by 3x for every row the camera
+    scrolls down, homing in on the right-hand end of the Cantor set (its right
+    edge stays put on screen while everything else grows leftward). After each
+    tripling the picture is the same as before, one generation deeper.
 
-The BEAMS list holds full beams, 10 s apart, each in a new colour (yellow,
-blue, then the rest of the palette). Like the original single cantor_beam,
-every full beam starts on row 0 of the whole figure and works its way down row
-by row. It reaches a new row every row_period seconds (4), faster than the
-scroll's one row per 8 s, so a beam that starts after row 0 has scrolled away
-runs unseen until it overtakes the scroll and comes in at the top. It then
-descends the screen until it drops off the bottom, overlapping the beams
-before and after it.
-
-The row timing is the steady state of the Cantor tempo curve that
-scantimes.py follows (row n spans beats [2·3^(n-1), 3^n] of a curve whose
-tempo triples every row_period): each row takes row_period·log3(1.5)
-seconds to sweep, accelerating so it is 1.5x faster at the end than at the
-start, followed by a rest. Written in closed form, it carries on for
-unboundedly many rows (scantimes' tempo curve stops after 17).
+Everything else is the original: the same beam schedule (a new beam every 5 s,
+each starting on row 0 and accelerating down the figure row by row with the
+scantimes Cantor tempo curve), the same constant-speed downward scroll, and the
+same lingering fill (LINGER_ALPHA, fading over LINGER_FADE_TIME).
 
 Each row is swept with the classic cantor_beam geometry (centre→out on a solid
-bar, then alternating outer→inner / inner→outer, jumping the gaps), but
-measured in the sub-figure that fits on screen when that row's sweep ends, so
-the sweep stays in view however deep the zoom has gone. It keeps the lingering
-fill of the earlier versions: a LINGER_ALPHA trail that fades over
-LINGER_FADE_TIME.
+bar, then alternating outer→inner / inner→outer), but measured in the deepest
+sub-figure whose left end is on screen when that row's sweep ends, so the sweep
+stays in view however far the zoom has gone.
 
-Rendering an endless zoom
--------------------------
-The figure triples in width every 8 seconds, so it cannot be drawn as one
-full-width pattern (after 100 s it would be ~10^5 frames wide). Instead each
-frame is drawn relative to the deepest sub-figure S_m = [1 - 3^-m, 1] that
-still covers the frame's left edge: S_m is a complete Cantor set, row L of the
-whole figure is row L - m of S_m, and rows above S_m are solid across the
-frame. S_m is never more than ~3.2 pattern-widths wide, so the per-frame cost
-stays constant forever and nothing loses float precision.
-
-Every row is drawn from its exact area coverage per pixel column (the measure
-of the Cantor level inside each column, from a cumulative-measure table), so
-the bars are antialiased, deep rows fade naturally as their bars shrink below
-a pixel ((2/3)^n of the light survives per generation), and switching from S_m
-to S_m+1 is seamless. Each row is computed as a single 1-pixel line and
-stretched to bar height in C, which keeps the per-frame numpy work small.
+Rendering the zoom
+------------------
+Each frame is drawn relative to the deepest sub-figure S_m = [1 - 3^-m, 1]
+that still covers the frame's left edge: S_m is a complete Cantor set, row L of
+the whole figure is row L - m of S_m, and rows above S_m are solid across the
+frame. Every row is drawn from its exact area coverage per pixel column, so the
+bars are antialiased and deep rows fade naturally as their bars shrink below a
+pixel. Each row is computed as a single 1-pixel line and stretched to bar
+height in C.
 
 Construction mirrors the earlier versions: PygameRecorder, supersampled
 rendering, --render/--no-render CLI flag, optional soundtrack.
@@ -68,6 +46,8 @@ import numpy as np
 import pygame
 
 from pygame_recorder import PygameRecorder
+from cantor_utils.scantimes import row_start_and_end_beats
+from cantor_utils.tempo import cantor_accel_curve
 
 
 # --- Display ---
@@ -86,61 +66,39 @@ INTERNAL_H = HEIGHT * SUPERSAMPLE
 # the file with --soundtrack PATH.
 SOUNDTRACK = "InfinitySoundtrack.mp3"
 
-# Time (seconds into the animation) at which the soundtrack begins. Before it
-# the animation runs silently.
-SOUNDTRACK_START_TIME = 3.0
+# Time (seconds into the animation) at which the soundtrack begins.
+SOUNDTRACK_START_TIME = 0.0
 
 
 # --- Colors ---
 BG_COLOR = (10, 10, 10)
 BAR_COLOR = (50, 50, 50)
 
-
-# --- Beams ---
-# Each full beam is a tuple:
-#   (color (r,g,b), start_time seconds, row_period seconds, start_row, num_rows)
-# The beam enters start_row at start_time and continues down one row every
-# row_period seconds for num_rows rows (None = until it drops off the bottom of
-# the screen).
-#
-# row_period is the tripling time of the beam's tempo curve: each row's sweep
-# takes row_period * log3(1.5) (~37%) of it, the rest is the Cantor rest. 4 s
-# is the project's usual tripling_time (scaling_factor 2.409...); scroll2's
-# beam used ~10 s, but here it has to outpace the scroll (one row per 8 s) or
-# the beam would slide off the top of the screen.
-#
-# Every beam starts on row 0 of the whole figure, 10 s apart, cycling through
-# the colours starting with scroll2's yellow and blue. Row 0 has usually
-# scrolled off the top by then, so a beam runs unseen until it catches up with
-# the scroll and comes in at the top of the screen. Add lines to keep going
-# past the end of the list.
+# Each beam instance is a tuple:
+#   (color (r,g,b), start_time seconds, time_scaling_factor[, start_row, num_rows])
+# The scaling factor is passed to the scantimes Cantor tempo curve — larger =
+# slower beam. The two optional trailing fields restrict which rows the beam
+# sweeps (omit them to sweep the whole figure from row 0):
+#   start_row  (default 0)    — the Cantor row the beam enters at start_time.
+#   num_rows   (default None) — how many rows to sweep before stopping
+#                               (None = continue to the bottom of the figure).
+# Same schedule as cantor_beam_linger_scroll.py, with a new colour each time.
 BEAMS = [
-    ((255, 230, 90),   5.0, 4.0, 0, None),    # yellow
-    ((20, 100, 250),  15.0, 4.0, 0, None),    # blue
-    ((255, 70, 150),  25.0, 4.0, 0, None),    # pink
-    ((60, 220, 120),  35.0, 4.0, 0, None),    # green
-    ((255, 140, 40),  45.0, 4.0, 0, None),    # orange
-    ((160, 90, 255),  55.0, 4.0, 0, None),    # violet
-    ((40, 210, 230),  65.0, 4.0, 0, None),    # cyan
-    ((250, 60, 60),   75.0, 4.0, 0, None),    # red
-    ((255, 230, 90),  85.0, 4.0, 0, None),    # yellow
-    ((20, 100, 250),  95.0, 4.0, 0, None),    # blue
-    ((255, 70, 150), 105.0, 4.0, 0, None),    # pink
-    ((60, 220, 120), 115.0, 4.0, 0, None),    # green
-    ((255, 140, 40), 125.0, 4.0, 0, None),    # orange
-    ((160, 90, 255), 135.0, 4.0, 0, None),    # violet
-    ((40, 210, 230), 145.0, 4.0, 0, None),    # cyan
-    ((250, 60, 60),  155.0, 4.0, 0, None),    # red
-    ((255, 230, 90), 165.0, 4.0, 0, None),    # yellow
-    ((20, 100, 250), 175.0, 4.0, 0, None),    # blue
-    ((255, 70, 150), 185.0, 4.0, 0, None),    # pink
-    ((60, 220, 120), 195.0, 4.0, 0, None),    # green
+    ((255, 230, 90),  1.0, 3.0),    # yellow
+    ((20, 100, 250),  6.0, 3.0),    # blue
+    ((255, 70, 150), 11.0, 3.0),    # pink
+    ((60, 220, 120), 16.0, 3.0),    # green
+    ((255, 140, 40), 21.0, 3.0),    # orange
+    ((160, 90, 255), 26.0, 3.0),    # violet
+    ((40, 210, 230), 31.0, 3.0),    # cyan
+    ((250, 60, 60),  36.0, 3.0),    # red
+    ((255, 230, 90), 41.0, 3.0),    # yellow
 ]
 
 # Which sub-figure a row's sweep geometry is measured in. 0: the one that fits
 # on screen when the sweep ends — rows get the classic mirrored pair of beams
 # (or centre→out on a solid bar). 1: its parent, of which only the right third
-# is on screen — a single beam crosses the row, like the late rows of scroll2.
+# is on screen — a single beam crosses the row.
 BEAM_FRAME_OFFSET = 0
 
 
@@ -152,12 +110,14 @@ LINGER_ALPHA = 0.5
 # Seconds over which a finished row's lingering trail fades back to black,
 # measured from the moment the beam finishes sweeping that row. Set to 0 (or
 # None) to disable fading and leave the trail at LINGER_ALPHA.
-LINGER_FADE_TIME = 2.
+LINGER_FADE_TIME = 1.
 
 
 # --- Layout (fractions of frame) ---
-# At t = 0 the figure sits where scroll2's did; the zoom keeps its right edge
-# (PATTERN_LEFT_FRAC + PATTERN_WIDTH_FRAC) fixed on screen.
+# The base seven Cantor generations plus EXTRA_GENERATIONS more drawn below,
+# revealed by the scroll. Override with --extra-generations.
+EXTRA_GENERATIONS = 8
+NUM_LEVELS = 7 + EXTRA_GENERATIONS
 PATTERN_LEFT_FRAC = 0.06
 PATTERN_WIDTH_FRAC = 0.88
 ROW_TOP_FRAC = 0.10
@@ -167,20 +127,6 @@ BAR_HEIGHT_FRAC = 0.038
 # Deepest Cantor level ever evaluated (2**level segments). Rows deeper than
 # this are far below a pixel and are drawn as this level.
 MAX_LEVEL = 16
-
-
-# --- Endless zoom + scroll ---
-# Seconds for each 3x horizontal stretch. The scroll advances
-# SCROLL_ROWS_PER_TRIPLING rows in the same time; 1 makes the motion exactly
-# self-similar. The zoom holds still until HZOOM_START_TIME and the scroll until
-# SCROLL_START_TIME. With the zoom starting later, the rows at the top of the
-# screen stay (HZOOM_START_TIME - SCROLL_START_TIME) / HZOOM_TRIPLING_TIME
-# generations deeper than the sub-figure filling the screen; set the two equal
-# to keep the top row a solid bar.
-HZOOM_TRIPLING_TIME = 8.0
-SCROLL_ROWS_PER_TRIPLING = 1.0
-HZOOM_START_TIME = 20.0
-SCROLL_START_TIME = 20.0
 
 
 # --- Gradient look ---
@@ -195,12 +141,34 @@ TIGHT_MAX_ALPHA = 255
 TIGHT_FALLOFF_EXP = 2.0
 
 
-# --- Beam envelope ---
+# --- Animation timing ---
+# TAIL holds the final frame after the last row finishes.
+TAIL = 1.5
+
 # How far past progress = 1 (in row-progress units) the beam takes to fade fully.
 FADE_LENGTH = 0.5
 
 # How long the beam takes to bloom in at the start of a row (row-progress units).
 BLOOM_LENGTH = 0.08
+
+
+# --- Camera scroll ---
+# Constant downward pan speed, in rows per second, held for the whole piece.
+# None = chosen so the last generation ends the piece at SCROLL_END_FRAC of the
+# screen (as in cantor_beam_linger_scroll.py); an explicit number overrides it
+# (0 = no pan, and so no zoom). Override with --scroll-speed.
+SCROLL_SPEED = None
+SCROLL_START_TIME = 0.0
+SCROLL_END_FRAC = 0.5
+START_CAMERA_POSITION = -0.4
+
+
+# --- Zoom ---
+# The zoom is locked to the scroll: ZOOM_TRIPLINGS_PER_ROW 3x horizontal
+# stretches per row scrolled (1 makes the motion exactly self-similar). It
+# holds still until HZOOM_START_TIME.
+ZOOM_TRIPLINGS_PER_ROW = 1.0
+HZOOM_START_TIME = 0.0
 
 
 # ── Cantor geometry ──────────────────────────────────────────────────
@@ -270,25 +238,87 @@ def bar_h_px() -> int:
     return max(2, int(BAR_HEIGHT_FRAC * INTERNAL_H))
 
 
-# ── Zoom and scroll ──────────────────────────────────────────────────
+# ── Beam timing ──────────────────────────────────────────────────────
+
+@lru_cache(maxsize=None)
+def _row_beats(num_rows: int):
+    """(start_beat, end_beat) of the first num_rows Cantor rows."""
+    out = []
+    for row, beats in enumerate(row_start_and_end_beats()):
+        if row >= num_rows:
+            break
+        out.append(beats)
+    return tuple(out)
+
+
+def _beam_time_offset(scaling_factor: float, start_row: int) -> float:
+    """Seconds to add to a beam's local clock so it enters `start_row` at t=0."""
+    return scaling_factor * cantor_accel_curve.time_at_beat(_row_beats(start_row + 1)[start_row][0])
+
+
+@lru_cache(maxsize=None)
+def _row_end_times(start_time: float, scaling_factor: float,
+                   start_row: int = 0) -> tuple:
+    """Wall-clock time at which the beam finishes each row, indexed by row."""
+    offset = _beam_time_offset(scaling_factor, start_row)
+    return tuple(start_time + scaling_factor * cantor_accel_curve.time_at_beat(end_beat) - offset
+                 for _start_beat, end_beat in _row_beats(NUM_LEVELS))
+
+
+def _beam_params(beam):
+    """Unpack a BEAMS entry, filling the optional start_row / num_rows fields."""
+    color, start_time, scaling_factor = beam[0], beam[1], beam[2]
+    start_row = beam[3] if len(beam) > 3 else 0
+    num_rows = beam[4] if len(beam) > 4 else None
+    return color, start_time, scaling_factor, start_row, num_rows
+
+
+def _beam_end_time(start_time: float, scaling_factor: float,
+                   start_row: int, num_rows) -> float:
+    """Wall-clock time at which one beam finishes its last swept row."""
+    last_row = NUM_LEVELS - 1 if num_rows is None else min(NUM_LEVELS, start_row + num_rows) - 1
+    last_row = max(start_row, min(last_row, NUM_LEVELS - 1))
+    return _row_end_times(start_time, scaling_factor, start_row)[last_row]
+
+
+def total_animation_time() -> float:
+    """Wall-clock time at which the latest beam finishes its last row."""
+    return max(_beam_end_time(*_beam_params(beam)[1:]) for beam in BEAMS)
+
+
+# ── Scroll and zoom ──────────────────────────────────────────────────
 #
 # Both are closed-form in wall-clock time, so every frame is deterministic.
 
-def _right_frac() -> float:
-    """Screen fraction of the figure's right end, which the zoom holds fixed."""
-    return PATTERN_LEFT_FRAC + PATTERN_WIDTH_FRAC
-
-
-def zoom_exponent(t: float) -> float:
-    """Number of 3x stretches completed at time t (fractional)."""
-    return max(0.0, t - HZOOM_START_TIME) / HZOOM_TRIPLING_TIME
+def _scroll_speed() -> float:
+    """Pan speed in rows/second: the override, or an end-centred auto speed."""
+    if SCROLL_SPEED is not None:
+        return max(0.0, SCROLL_SPEED)
+    span = total_animation_time() - SCROLL_START_TIME
+    if span <= 0:
+        return 0.0
+    # Camera offset that puts the last generation at SCROLL_END_FRAC.
+    end_camera = ((NUM_LEVELS - 1)
+                  - (SCROLL_END_FRAC - ROW_TOP_FRAC) / ROW_SPACING_FRAC)
+    return max(0.0, end_camera / span)
 
 
 def camera_position(t: float) -> float:
     """Downward pan offset at time t, in rows: row k sits at ROW_TOP_FRAC when
     the camera is at k."""
-    return (SCROLL_ROWS_PER_TRIPLING * max(0.0, t - SCROLL_START_TIME)
-            / HZOOM_TRIPLING_TIME)
+    return START_CAMERA_POSITION + _scroll_speed() * max(0.0, t - SCROLL_START_TIME)
+
+
+def zoom_exponent(t: float) -> float:
+    """Number of 3x stretches completed at time t (fractional)."""
+    if t <= HZOOM_START_TIME:
+        return 0.0
+    return ZOOM_TRIPLINGS_PER_ROW * (camera_position(t) - camera_position(HZOOM_START_TIME))
+
+
+def _right_frac() -> float:
+    """Screen fraction of the figure's right end, which the zoom holds fixed."""
+    return PATTERN_LEFT_FRAC + PATTERN_WIDTH_FRAC
 
 
 def _fit_exponent() -> float:
@@ -364,11 +394,11 @@ def _visible(y_top: int, height_px: int) -> bool:
 
 
 def visible_rows():
-    """Range of rows that may intersect the frame (callers still cull)."""
+    """Range of figure rows that may intersect the frame (callers still cull)."""
     reach = (ROW_TOP_FRAC + BAR_HEIGHT_FRAC) / ROW_SPACING_FRAC
     first = max(0, math.floor(_camera_rows - reach))
     last = math.ceil(_camera_rows + (1.0 + BAR_HEIGHT_FRAC) / ROW_SPACING_FRAC)
-    return range(first, last + 1)
+    return range(first, min(NUM_LEVELS - 1, last) + 1)
 
 
 # ── Drawing ──────────────────────────────────────────────────────────
@@ -443,17 +473,6 @@ def _beam_glow_alpha(level: int, progress: float, x_fracs: np.ndarray) -> np.nda
     return alpha
 
 
-def _sweep_progress(t: float, start_time: float, sweep_time: float) -> float:
-    """Progress through a row, accelerating like a row of the Cantor tempo curve.
-
-    A Cantor row spans beats [2b, 3b] of a curve whose tempo triples at a steady
-    rate, so progress = 2 * (1.5 ** (elapsed / sweep_time) - 1): 0 at the start,
-    1 after sweep_time, and still climbing afterwards so the beam can fade out
-    past the row's edge.
-    """
-    return 2.0 * (1.5 ** ((t - start_time) / sweep_time) - 1.0)
-
-
 def _linger_fade(t: float, row_end_time: float) -> float:
     """Fraction (0..1) of LINGER_ALPHA still showing for a finished row."""
     if not LINGER_FADE_TIME or LINGER_FADE_TIME <= 0:
@@ -461,35 +480,27 @@ def _linger_fade(t: float, row_end_time: float) -> float:
     return max(0.0, 1.0 - (t - row_end_time) / LINGER_FADE_TIME)
 
 
-def beam_generation(start_time: float, sweep_time: float, row: int) -> int:
+def beam_generation(row: int, end_time: float) -> int:
     """Sub-figure a row sweep's geometry is measured in.
 
     The deepest generation (at most the row's own) whose sub-figure has its
     left end on screen when the sweep finishes, so the whole sweep stays in
     view, then BEAM_FRAME_OFFSET generations up from there.
     """
-    z_end = zoom_exponent(start_time + sweep_time)
-    fit = max(0, math.ceil(z_end - _fit_exponent()))
+    fit = max(0, math.ceil(zoom_exponent(end_time) - _fit_exponent()))
     return max(0, min(row, fit) - BEAM_FRAME_OFFSET)
 
 
-def draw_row_sweep(surface, t: float, color, start_time: float,
-                   sweep_time: float, row: int):
-    """One row of a full beam: the moving glow plus its lingering fill."""
-    if t < start_time:
-        return
-    h = bar_h_px()
-    if not _visible(_row_top_px(row, h), h):
-        return
-    progress = _sweep_progress(t, start_time, sweep_time)
-    end_time = start_time + sweep_time
+def draw_row_sweep(surface, t: float, color, row: int, progress: float,
+                   end_time: float):
+    """One row of a beam: the moving glow plus its lingering fill."""
     fill_fade = _linger_fade(t, end_time)
     if progress > 1.0 + FADE_LENGTH and fill_fade <= 0.0:
         return
 
-    # Sweep geometry lives in sub-figure S_g, where this row is level g' = row - g.
+    # Sweep geometry lives in sub-figure S_g, where this row is level row - g.
     # Map the frame's S_m column coordinates into S_g's.
-    gen = beam_generation(start_time, sweep_time, row)
+    gen = beam_generation(row, end_time)
     level = row - gen
     x_fracs = 1.0 - (1.0 - _column_fracs()) * 3.0 ** (gen - _frame_gen)
 
@@ -501,74 +512,35 @@ def draw_row_sweep(surface, t: float, color, start_time: float,
     _blit_row_light(surface, row, color, np.maximum(fill, glow))
 
 
-def _row_lifetime(sweep_time: float) -> float:
-    """Seconds from a row sweep's start until both its glow and trail are gone
-    (infinite if trails never fade)."""
-    if not LINGER_FADE_TIME or LINGER_FADE_TIME <= 0:
-        return math.inf
-    glow_end = sweep_time * math.log(1.0 + (1.0 + FADE_LENGTH) / 2.0, 1.5)
-    return max(glow_end, sweep_time + LINGER_FADE_TIME)
-
-
-def _sweep_time(row_period: float) -> float:
-    """Sweep length of one row of a full beam: the Cantor row [2b, 3b] takes
-    log3(1.5) of the tempo curve's tripling time."""
-    return row_period * math.log(1.5, 3)
-
-
 def draw_beam_instance(surface, t: float, color, start_time: float,
-                       row_period: float, start_row: int, num_rows=None):
-    """A full beam: enters start_row at start_time, then each following row
-    every row_period seconds, for num_rows rows (None = without end; rows off
-    screen are skipped)."""
-    if t < start_time or (num_rows is not None and num_rows <= 0):
-        return
-    sweep_time = _sweep_time(row_period)
-    for k in _live_beam_rows(t - start_time, row_period, num_rows):
-        draw_row_sweep(surface, t, color, start_time + k * row_period,
-                       sweep_time, start_row + k)
-
-
-def _live_beam_rows(elapsed: float, row_period: float, num_rows) -> range:
-    """Indices (within the beam) of the rows still glowing or lingering."""
-    newest = math.floor(elapsed / row_period)
-    if num_rows is not None:
-        newest = min(num_rows - 1, newest)
-    life = _row_lifetime(_sweep_time(row_period))
-    oldest = 0 if math.isinf(life) else max(0, math.floor((elapsed - life) / row_period))
-    return range(oldest, newest + 1)
-
-
-def _beam_finished(t: float, start_time: float, row_period: float,
-                   start_row: int, num_rows) -> bool:
-    """True once a full beam can never show again: its last row has faded, or
-    (with no row limit) every row it still lights is below the screen and it
-    outpaces the scroll, so it will stay there."""
+                       scaling_factor: float, start_row: int = 0,
+                       num_rows=None):
     if t < start_time:
-        return False
-    rows = _live_beam_rows(t - start_time, row_period, num_rows)
-    if len(rows) == 0:
-        return True
-    scroll_rate = SCROLL_ROWS_PER_TRIPLING / HZOOM_TRIPLING_TIME
+        return
+    end_row = NUM_LEVELS if num_rows is None else min(NUM_LEVELS, start_row + num_rows)
+    # Beat position on the beam's own (shifted) Cantor tempo curve; each row's
+    # progress is where that beat falls within the row's [start, end] beats.
+    offset = _beam_time_offset(scaling_factor, start_row)
+    beat = cantor_accel_curve.beat_at_time(((t - start_time) + offset) / scaling_factor)
+    end_times = _row_end_times(start_time, scaling_factor, start_row)
     h = bar_h_px()
-    return (1.0 / row_period > scroll_rate
-            and _row_top_px(start_row + rows.start, h) >= INTERNAL_H)
-
-
-def active_beams(t: float):
-    """The BEAMS entries that have started and may still be visible at time t.
-    Call after _set_frame(t)."""
-    for beam in BEAMS:
-        if t >= beam[1] and not _beam_finished(t, *beam[1:]):
-            yield beam
+    beats = _row_beats(NUM_LEVELS)
+    for row in visible_rows():
+        if row < start_row or row >= end_row:
+            continue
+        start_beat, end_beat = beats[row]
+        if beat < start_beat or not _visible(_row_top_px(row, h), h):
+            continue
+        progress = (beat - start_beat) / (end_beat - start_beat)
+        draw_row_sweep(surface, t, color, row, progress, end_times[row])
 
 
 def draw_scene(surface, t: float):
     _set_frame(t)
     surface.fill(BG_COLOR)
     draw_static_bars(surface)
-    for beam in active_beams(t):
-        draw_beam_instance(surface, t, *beam)
+    for beam in BEAMS:
+        draw_beam_instance(surface, t, *_beam_params(beam))
 
 
 # ── Soundtrack ───────────────────────────────────────────────────────
@@ -652,7 +624,7 @@ def _mux_soundtrack_into_video(video_path, audio_path, audio_start,
 # CLI flags override them if you launch from a terminal.
 RENDER = False
 START_TIME = 0.0
-STOP_TIME = 100.0          # render length; interactive playback runs until quit
+STOP_TIME = None           # None → computed from animation length
 FRAMES_DIR = ".frames_beam_linger_scroll3"
 OUTPUT_PATH = "cantor_beam_linger_scroll3.mp4"
 KEEP_FRAMES = False
@@ -660,8 +632,8 @@ KEEP_FRAMES = False
 
 def main():
     global LINGER_ALPHA, LINGER_FADE_TIME
-    global HZOOM_TRIPLING_TIME, SCROLL_ROWS_PER_TRIPLING
-    global HZOOM_START_TIME, SCROLL_START_TIME
+    global NUM_LEVELS, SCROLL_SPEED, SCROLL_START_TIME
+    global ZOOM_TRIPLINGS_PER_ROW, HZOOM_START_TIME
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--render", action=argparse.BooleanOptionalAction,
@@ -670,21 +642,27 @@ def main():
     parser.add_argument("--start", type=float, default=START_TIME,
                         help="Start saving frames at this time (seconds)")
     parser.add_argument("--stop", type=float, default=STOP_TIME,
-                        help="Stop time in seconds (render mode only)")
+                        help="Stop time in seconds (render mode only; "
+                             "default: computed animation length)")
     parser.add_argument("--linger-alpha", type=float, default=LINGER_ALPHA,
                         help="Opacity of the lingering fill, 0..1 (0 = no trail)")
     parser.add_argument("--linger-fade-time", type=float, default=LINGER_FADE_TIME,
                         help="Seconds for a finished row's trail to fade out "
                              "(larger = slower; 0 = never fade)")
-    parser.add_argument("--tripling-time", type=float, default=HZOOM_TRIPLING_TIME,
-                        help="Seconds for each 3x horizontal zoom")
-    parser.add_argument("--rows-per-tripling", type=float,
-                        default=SCROLL_ROWS_PER_TRIPLING,
-                        help="Rows scrolled per 3x zoom (1 = self-similar)")
+    parser.add_argument("--extra-generations", type=int, default=EXTRA_GENERATIONS,
+                        help="Extra Cantor generations drawn below the base seven "
+                             "(revealed by the downward camera scroll)")
+    parser.add_argument("--scroll-speed", type=float, default=SCROLL_SPEED,
+                        help="Constant downward pan speed in rows/second. Omit "
+                             "to end with the last row mid-screen (0 = no pan)")
+    parser.add_argument("--scroll-start", type=float, default=SCROLL_START_TIME,
+                        help="Time in seconds at which the constant scroll begins")
+    parser.add_argument("--triplings-per-row", type=float,
+                        default=ZOOM_TRIPLINGS_PER_ROW,
+                        help="3x horizontal zooms per row scrolled "
+                             "(1 = self-similar, 0 = no zoom)")
     parser.add_argument("--zoom-start", type=float, default=HZOOM_START_TIME,
                         help="Time in seconds at which the horizontal zoom begins")
-    parser.add_argument("--scroll-start", type=float, default=SCROLL_START_TIME,
-                        help="Time in seconds at which the vertical scroll begins")
     parser.add_argument("--soundtrack", default=SOUNDTRACK,
                         help="Audio track under the animation (default: "
                              "InfinitySoundtrack.mp3). Plays live in interactive "
@@ -701,14 +679,18 @@ def main():
 
     LINGER_ALPHA = args.linger_alpha
     LINGER_FADE_TIME = args.linger_fade_time
-    HZOOM_TRIPLING_TIME = args.tripling_time
-    SCROLL_ROWS_PER_TRIPLING = args.rows_per_tripling
-    HZOOM_START_TIME = args.zoom_start
+    NUM_LEVELS = 7 + args.extra_generations
+    SCROLL_SPEED = args.scroll_speed
     SCROLL_START_TIME = args.scroll_start
+    ZOOM_TRIPLINGS_PER_ROW = args.triplings_per_row
+    HZOOM_START_TIME = args.zoom_start
+
+    if args.stop is None:
+        args.stop = total_animation_time() + TAIL
 
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Cantor Beam (endless zoom + scroll)")
+    pygame.display.set_caption("Cantor Beam (lingering fill, scroll + zoom)")
 
     global INTERNAL_W, INTERNAL_H
     if args.render:
